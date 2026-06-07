@@ -154,8 +154,8 @@ ${0}:precmd() {
   [[
     -v _autocomplete__async_fd && _autocomplete__async_fd -ge 10 && -t $_autocomplete__async_fd
   ]] &&
-    exec {_autocomplete_async_fd}<&- &&
-    unset _autocomplete_async_fd
+    exec {_autocomplete__async_fd}<&- &&
+    unset _autocomplete__async_fd
   unset curcontext _autocomplete__isearch
 
   .autocomplete:async:reset-context
@@ -164,8 +164,8 @@ ${0}:precmd() {
 }
 
 .autocomplete:async:wait() {
-  typeset -g _autocomplete_async_fd=
-  sysopen -r -o cloexec -u _autocomplete_async_fd <(
+  typeset -g _autocomplete__async_fd=
+  sysopen -r -o cloexec -u _autocomplete__async_fd <(
     local -F seconds=
     builtin zstyle -s :autocomplete: delay seconds ||
         builtin zstyle -s :autocomplete: min-delay seconds ||
@@ -182,7 +182,7 @@ ${0}:precmd() {
 
     print
   )
-  builtin zle -Fw "$_autocomplete_async_fd" .autocomplete:async:wait:fd-widget
+  builtin zle -Fw "$_autocomplete__async_fd" .autocomplete:async:wait:fd-widget
 
   return 0
 }
@@ -194,7 +194,7 @@ ${0}:precmd() {
 
   # Unhook ourselves immediately, so we don't get called more than once.
   builtin zle -F "$fd" 2> /dev/null
-  [[ -t $fd ]] && exec {fd}<&-
+  { : <&$fd } 2>/dev/null && exec {fd}<&-
 
   if [[ -n $_autocomplete__zle_flags ]]; then
     builtin zle -f $_autocomplete__zle_flags
@@ -212,12 +212,12 @@ ${0}:precmd() {
 }
 
 .autocomplete:async:start() {
-  typeset -g _autocomplete_async_fd=
-  sysopen -r -o cloexec -u _autocomplete_async_fd <(
+  typeset -g _autocomplete__async_fd=
+  sysopen -r -o cloexec -u _autocomplete__async_fd <(
     local +h PS4=$_autocomplete__ps4
     .autocomplete:async:start:inner 2>>| $_autocomplete__log
   )
-  builtin zle -Fw "$_autocomplete_async_fd" .autocomplete:async:complete:fd-widget
+  builtin zle -Fw "$_autocomplete__async_fd" .autocomplete:async:complete:fd-widget
 
   # WORKAROUND: https://github.com/zsh-users/zsh-autosuggestions/issues/364
   # There's a weird bug in Zsh < 5.8, where ^C stops working unless we force a fork.
@@ -370,7 +370,7 @@ ${0}:precmd() {
       (( SECONDS += reply[2] ))
 
     } always {
-      [[ -t $fd ]] && exec {fd}<&-
+      { : <&$fd } 2>/dev/null && exec {fd}<&-
     }
 
     [[ -n $curcontext ]] &&
