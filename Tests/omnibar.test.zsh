@@ -242,6 +242,8 @@ local comp_call=${CALLS[(r)*checkout*]}
 functions[.autocomplete__omnibar-tint]="$( < Functions/Util/.autocomplete__omnibar-tint )"
 
 # A real reply, captured from tmux 3.7c under Ghostty: background #282c34.
+# The panel is off by default, so the query has to be asked for explicitly.
+zstyle ':autocomplete:omnibar:' background auto
 typeset -g _omnibar_tint_reply=$'\e]11;rgb:2828/2c2c/3434\e\\'
 unset _omnibar_bg
 .autocomplete__omnibar-tint
@@ -260,6 +262,7 @@ local _noisefile=$(mktemp)
 (
   emulate -L zsh
   setopt extendedglob warncreateglobal
+  zstyle ':autocomplete:omnibar:' background auto
   # `warncreateglobal` only fires when the global does not already exist, and
   # earlier checks in this file leave match/mbegin/mend behind, which a
   # subshell inherits. Without clearing them the check silently cannot fail.
@@ -289,6 +292,16 @@ unset _omnibar_bg
 .autocomplete__omnibar-tint
 [[ -z $_omnibar_bg ]] ||
     fail "an unparseable reply must leave the panel off: got '$_omnibar_bg'"
+
+# The default must be off, since painting the list is the inverse of the input
+# band people actually ask for.
+zstyle -d ':autocomplete:omnibar:' background
+unset _omnibar_bg
+_omnibar_tint_reply=$'\e]11;rgb:2828/2c2c/3434\e\\'
+.autocomplete__omnibar-tint
+[[ -z $_omnibar_bg ]] ||
+    fail "the panel should be off unless asked for: got '$_omnibar_bg'"
+zstyle ':autocomplete:omnibar:' background auto
 
 # An explicit colour must bypass the query entirely.
 zstyle ':autocomplete:omnibar:' background '#112233'
