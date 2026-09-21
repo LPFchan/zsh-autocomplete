@@ -32,6 +32,7 @@ _omnibar() {
   setopt localoptions extendedglob
 
   typeset -ga _omnibar_match=() _omnibar_disp=() _omnibar_optset=() _omnibar_src=()
+  typeset -ga _omnibar_tag=()
   typeset -ga _omnibar_order=()
   typeset -gi _omnibar_noptsets=0
 

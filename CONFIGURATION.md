@@ -43,6 +43,34 @@ To go back to stock behaviour:
 zstyle ':autocomplete:omnibar' enabled no
 ```
 
+### Icons
+Each row is prefixed with a Nerd Font glyph showing where it came from -- a
+clock for history, a terminal for commands, a folder for directories, and so
+on. A blended list mixes a bare command line with a padded
+`name -- description`, and with nothing to tell them apart the eye cannot group
+them; the glyph is what makes it scannable.
+
+On by default. It needs a Nerd Font installed:
+```zsh
+zstyle ':autocomplete:omnibar:' icons no   # turn them off
+```
+Individual glyphs are overridable by tag:
+```zsh
+zstyle ':autocomplete:omnibar:icons' history '\uf017'
+zstyle ':autocomplete:omnibar:icons' directory '\uf115'
+```
+Recognised tags: `history`, `command`, `executable`, `builtin`, `alias`,
+`function`, `parameter`, `option`, `file`, `globbed-file`, `directory`,
+`local-directory`, and `default` for anything else.
+
+### Grouping history together
+By default history and completions interleave strictly by rank. To keep history
+as a block at the top instead, which reads more calmly when your history lines
+are long, give it a large negative bias:
+```zsh
+zstyle ':autocomplete:omnibar:' bias-history -100000
+```
+
 ### Tuning the ranking
 There is no correct way to rank a command you ran yesterday against a flag you
 have never used, only a preference. The weights are styles so you can adjust

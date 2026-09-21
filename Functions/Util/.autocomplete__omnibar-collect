@@ -87,6 +87,9 @@ for (( _omni_i = 1; _omni_i <= _omni_n; _omni_i++ )); do
   _omnibar_disp+=( "${_omni_disp_vals[_omni_i]:-$_omni_words[_omni_i]}" )
   _omnibar_optset+=( $_omnibar_noptsets )
   _omnibar_src+=( c )
+  # Keep the group name (-J/-V) purely to choose an icon later. It is dropped
+  # from the emitted option set, because the omnibar is one flat group.
+  _omnibar_tag+=( "${_omni_o[-J]:-${_omni_o[-V]:-}}" )
 done
 
 # Report success: callers read this to decide whether they produced anything,

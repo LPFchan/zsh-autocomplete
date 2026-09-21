@@ -28,6 +28,58 @@ local -a order=( $_omnibar_order )
 (( $#order > shown )) &&
     order=( $order[1,shown] )
 
+# Nerd Font icons. A blended list mixes two row shapes -- a bare command line
+# and a padded `name -- description` -- and with nothing to tell them apart the
+# eye cannot group them. A leading glyph per kind restores that, which is how a
+# browser's address bar stays readable with mixed row types.
+#
+# On by default; needs a Nerd Font. To turn them off:
+#   zstyle ':autocomplete:omnibar:' icons no
+# Individually overridable:
+#   zstyle ':autocomplete:omnibar:icons' history $'\uf1da'
+local -i use_icons=1
+zstyle -T ":autocomplete:omnibar:" icons ||
+    use_icons=0
+
+local -A icon=()
+if (( use_icons )); then
+  # Literal UTF-8, not $'\uXXXX': those are converted at run time and fail
+  # with "character not in range" in a non-UTF-8 locale, which took out the
+  # whole list rather than just the glyphs.
+  #
+  # Everything here is prefixed `_omni_`. This code runs inside the completion
+  # machinery, where bare names like `spec`, `k`, `v` and `tmp` are in common
+  # use; declaring them here leaked `spec=( ... )` onto the prompt line.
+  local -a _omni_spec=(
+      history          
+      command          
+      executable       
+      builtin          
+      alias            
+      function         
+      parameter        
+      option           
+      file             
+      globbed-file     
+      directory        
+      local-directory  
+      default          
+  )
+  local _omni_k= _omni_v= _omni_tmp=
+  while (( $#_omni_spec )); do
+    _omni_k=$_omni_spec[1] _omni_v=$_omni_spec[2]
+    shift 2 _omni_spec
+    _omni_tmp=
+    # zstyle -s cannot assign into an associative-array element, so go via a
+    # plain scalar.
+    if zstyle -s ":autocomplete:omnibar:icons" $_omni_k _omni_tmp; then
+      icon[$_omni_k]=$_omni_tmp
+    else
+      icon[$_omni_k]=$_omni_v
+    fi
+  done
+fi
+
 # Walk the ranked order and mark where the option set changes; each span
 # between boundaries becomes one compadd.
 local -i i idx cur=-1 start=1
@@ -52,10 +104,26 @@ for spec in $bounds; do
   set_id=${spec##*:}
 
   typeset -ga _omnibar_run_match=() _omnibar_run_disp=()
+  local _omni_glyph= _omni_tag= _omni_line=
   for (( j = from; j <= to; j++ )); do
     idx=$order[j]
     _omnibar_run_match+=( "$_omnibar_match[idx]" )
-    _omnibar_run_disp+=( "$_omnibar_disp[idx]" )
+
+    if (( use_icons )); then
+      # Completion tags are plural (`commands`, `options`); drop the trailing
+      # s so one table entry covers both spellings.
+      _omni_tag=${${_omnibar_tag[idx]:-default}%s}
+      _omni_glyph=${icon[$_omni_tag]:-$icon[default]}
+      _omni_line="$_omni_glyph ${_omnibar_disp[idx]}"
+    else
+      _omni_line="$_omnibar_disp[idx]"
+    fi
+
+    # Truncate here, once the row is fully built. Doing it in the source
+    # instead leaves the glyph and its space unaccounted for, so a full-width
+    # history line spills onto a second row and the redraw goes to pieces.
+    # The `m` flag counts display width, not bytes, so wide glyphs are safe.
+    _omnibar_run_disp+=( "${(mr:COLUMNS-1:)_omni_line}" )
   done
 
   # -l with -d lists one display string per line, which is the row-per-entry

@@ -61,24 +61,20 @@ lines=( ${(@)lines:#[[:blank:]]*} )
 (( $#lines )) ||
     return 0
 
-# Truncate to the terminal width. A command line is often far longer than the
-# window, and an untruncated entry wraps onto two or three rows, which turns an
-# interleaved list into an unreadable block. Upstream's history source pads to
-# COLUMNS-1 for exactly this reason.
-local -a display=( ${(@mr:COLUMNS-1:)lines} )
 
 local -i before=$#_omnibar_match
 
 # -Q so the line is inserted as-is rather than requoted, and -U so compadd
 # does not re-filter it against the current word; this source has already
 # decided what matches.
-compadd -Q -U -S '' -d display -- "${(@)lines}"
+compadd -Q -U -S '' -- "${(@)lines}"
 
 # Tag what was just added as history so the ranker can tell the sources apart;
 # the collector marks everything as completion by default.
 local -i i after=$#_omnibar_match
 for (( i = before + 1; i <= after; i++ )); do
   _omnibar_src[i]=h
+  _omnibar_tag[i]=history
 done
 
 return 0
