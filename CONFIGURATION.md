@@ -126,9 +126,9 @@ alone only shifts the lines above it.
 
 ### Panel background
 The list can be drawn on a slightly lighter background, so it reads as a panel
-rather than as text floating on the prompt:
+rather than as text floating on the prompt. Off by default:
 ```zsh
-zstyle ':autocomplete:omnibar:' background auto      # default
+zstyle ':autocomplete:omnibar:' background auto      # switch it on
 zstyle ':autocomplete:omnibar:' background-mix 15    # per cent white mixed in
 zstyle ':autocomplete:omnibar:' background '#3d4148' # or a fixed colour
 zstyle ':autocomplete:omnibar:' background off
@@ -174,7 +174,29 @@ is the choice between a full-width panel and a dimmed typed prefix. Both are
 not possible; the same `(#b)` colour spec that would let zsh do the dimming has
 no effect on these matches.
 
-#### What cannot be done
+#### What cannot be done: a band behind the input line
+This paints the completion list. It cannot paint the line you type on, which is
+usually what is actually wanted -- the input band a full-screen TUI draws.
+
+Three separate pieces would each have to be painted, and the third has no
+owner:
+
+  * the prompt, drawn by your prompt program. Possible, if every module is
+    given a background.
+  * the text you type, drawn by zle. Possible in principle via
+    `region_highlight`.
+  * the empty cells between the cursor and the right edge. Nothing draws
+    these, so nothing can colour them.
+
+Measured with Starship set up to paint its character line: the band ends where
+the prompt ends, and the typed text begins after a reset, outside it. A
+`$fill` module does not extend it either.
+
+The only way to occupy those trailing cells is `POSTDISPLAY`, which is also
+what Autocomplete uses for its inline suggestion -- and padding it risks that
+padding being accepted into the command line. Deliberately not done: quietly
+inserting spaces into a command is worse than a missing background.
+
 The band covers the completion list only. It cannot be extended around the line
 you type on: a prompt is drawn by your prompt program and the text you type by
 zle, and nothing pads the space to the right of the cursor, so the band would

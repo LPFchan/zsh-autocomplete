@@ -16,9 +16,14 @@
 # wrong guess is worse than nothing: it paints a block in almost-but-not-quite
 # the background colour, which reads as a rendering fault.
 
+# Off by default. The panel paints the completion list, and the thing usually
+# wanted is the opposite -- a band behind the line you type on, the way a
+# full-screen TUI draws its input. That cannot be done from a shell prompt (see
+# CONFIGURATION.md), and painting the list instead is not a smaller version of
+# it, it is the inverse.
 local _omni_want=
 zstyle -s ":autocomplete:omnibar:" background _omni_want ||
-    _omni_want=auto
+    _omni_want=off
 
 if [[ $_omni_want == (off|no|none) ]]; then
   typeset -g _omnibar_bg=
