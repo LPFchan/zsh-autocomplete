@@ -91,6 +91,12 @@ _omni_saved=$( stty -g < /dev/tty 2> /dev/null ) ||
 fi
 
 # rgb:RRRR/GGGG/BBBB -- 16 bits per channel, though some terminals send 8.
+#
+# `match`, `mbegin` and `mend` must be declared before any (#b) match. The
+# plugin runs with `warncreateglobal`, so without this the backreference
+# creates them globally and zsh prints three warnings -- and this function runs
+# from precmd in the main shell, so they land directly in the prompt.
+local -a match=() mbegin=() mend=()
 local _omni_hex="${_omni_reply#*rgb:}"
 [[ $_omni_hex == (#b)([0-9a-fA-F]##)/([0-9a-fA-F]##)/([0-9a-fA-F]##)* ]] ||
     return 0

@@ -249,6 +249,31 @@ unset _omnibar_bg
 [[ $_omnibar_bg == '#484b52' ]] ||
     fail "15% white over #282c34 should be #484b52: got '${_omnibar_bg:-<empty>}'"
 
+# It must also be silent. The plugin runs with `warncreateglobal`, and this
+# function runs from precmd in the main shell, so anything it prints to stderr
+# lands directly in the prompt -- which is how three "array parameter match
+# created globally" warnings ended up on screen. Any (#b) match needs `match`,
+# `mbegin` and `mend` declared local first.
+# Captured via a file rather than `$( ... 2>&1 >/dev/null )`: that form does
+# not catch these warnings, and a check that cannot fail is worse than none.
+local _noisefile=$(mktemp)
+(
+  emulate -L zsh
+  setopt extendedglob warncreateglobal
+  # `warncreateglobal` only fires when the global does not already exist, and
+  # earlier checks in this file leave match/mbegin/mend behind, which a
+  # subshell inherits. Without clearing them the check silently cannot fail.
+  unset match mbegin mend
+  functions[_tint_quiet]="$( < Functions/Util/.autocomplete__omnibar-tint )"
+  typeset -g _omnibar_tint_reply=$'\e]11;rgb:2828/2c2c/3434\e\\'
+  unset _omnibar_bg
+  _tint_quiet
+) > /dev/null 2> $_noisefile
+local noise="$( < $_noisefile )"
+rm -f $_noisefile
+[[ -z $noise ]] ||
+    fail "resolving the tint must print nothing; got: ${noise//$'\n'/ | }"
+
 # A different mix must move the result, or the style is being ignored.
 zstyle ':autocomplete:omnibar:' background-mix 50
 unset _omnibar_bg
