@@ -187,6 +187,53 @@ _omnibar_noptsets=1
 (( $#_omnibar_order == 2 )) ||
     fail "duplicate match strings should collapse to one entry: got $#_omnibar_order"
 
+# --- emit: how each source is filtered ------------------------------------
+
+# Completions must be re-filtered with the matcher spec they were generated
+# under, not left unfiltered. `-U` (no filtering at all) was used here to stop
+# fuzzy matches being dropped, and it let through every candidate `_describe`
+# offered -- `git am` and `git gc` for the input `git c`. History keeps `-U`,
+# because a whole command line never matches the word under the cursor.
+functions[.autocomplete__omnibar-emit]="$( < Functions/Util/.autocomplete__omnibar-emit )"
+
+reset-pool
+typeset -g PREFIX='c' SUFFIX='' BUFFER='git c'
+typeset -ga words=( git c )
+typeset -gi CURRENT=2 COLUMNS=80 LINES=24 BUFFERLINES=1
+typeset -g _matcher='m:{[:lower:]-}={[:upper:]_}'
+typeset -g _OMNIBAR_MORE='@@omnibar-more@@'
+
+_omnibar_match=( 'clone https://example.com ~/x' 'checkout' )
+_omnibar_disp=(  'git clone https://example.com ~/x' 'checkout' )
+_omnibar_src=(   h c )
+_omnibar_optset=( 1 2 )
+_omnibar_tag=(   history command )
+_omnibar_noptsets=2
+set -A _omnibar_opts_1 -Q -S ''
+set -A _omnibar_opts_2
+_omnibar_order=( 1 2 )
+
+# Record what would have been handed to compadd.
+typeset -ga CALLS=()
+builtin() {
+  [[ $1 == compadd ]] &&
+      CALLS+=( "${(j: :)@}" )
+}
+.autocomplete__omnibar-emit
+unfunction builtin
+
+local hist_call=${CALLS[(r)*clone*]}
+local comp_call=${CALLS[(r)*checkout*]}
+
+[[ -n $hist_call && $hist_call == *-U* ]] ||
+    fail "history run must pass -U: got '$hist_call'"
+
+[[ -n $comp_call && $comp_call == *-M* ]] ||
+    fail "completion run must re-filter with -M \$_matcher: got '$comp_call'"
+
+[[ $comp_call != *-U* ]] ||
+    fail "completion run must NOT pass -U, or non-matching candidates survive: got '$comp_call'"
+
 if (( failures )); then
   print -u2 -- "$failures failure(s)"
   exit 1
