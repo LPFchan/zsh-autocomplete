@@ -141,8 +141,19 @@ was chosen on. A terminal that does not answer the query gets no panel at all,
 rather than a guessed colour -- a near-miss reads as a rendering fault, which
 is worse than nothing.
 
-It needs `set -g allow-passthrough on` under tmux, since otherwise tmux answers
-the query on its own behalf instead of forwarding it.
+Under tmux the query goes out plain, not wrapped in the passthrough envelope.
+Passthrough looks correct -- it reaches the real terminal rather than letting
+tmux answer for itself -- but the reply then arrives at tmux and is never handed
+to the pane, so nothing is ever read:
+
+    plain      : REPLY \e]11;rgb:2828/2c2c/3434\e\
+    passthrough: (no reply)
+
+tmux answers OSC 11 itself with the background of the terminal it is attached
+to, which is the answer we wanted anyway.
+
+If no panel appears, `omnibar-tint-debug` in the repo root reports which route
+your terminal answers on and what tint was resolved.
 
 #### Why the band stops short of the edge
 With `dim-typed` on, the band ends about ten columns early. zsh measures a

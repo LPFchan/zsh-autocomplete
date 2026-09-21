@@ -1,0 +1,28 @@
+#!/bin/zsh
+# Diagnostic: does this terminal answer an OSC 11 background query, and by
+# which route? Run it from an interactive shell in the terminal you actually use.
+emulate -L zsh
+setopt extendedglob
+
+query() {
+  local label=$1 seq=$2 saved reply='' ch
+  saved=$( stty -g < /dev/tty ) || { print -r -- "$label: no tty"; return }
+  stty raw -echo min 0 time 0 < /dev/tty
+  print -n -- "$seq" > /dev/tty
+  local -i i
+  for (( i = 1; i <= 120; i++ )); do
+    read -t 0.01 -k 1 ch < /dev/tty 2>/dev/null && reply+=$ch
+    [[ $reply == *($'\a'|'\\') ]] && break
+  done
+  stty "$saved" < /dev/tty
+  if [[ -n $reply ]]; then
+    print -r -- "$label: REPLY ${(V)reply}"
+  else
+    print -r -- "$label: (no reply)"
+  fi
+}
+
+print -r -- "TMUX=${TMUX:+set}  TERM=$TERM  tmux passthrough=$(tmux show -gv allow-passthrough 2>/dev/null)"
+query "plain      " $'\e]11;?\e\\'
+query "passthrough" $'\ePtmux;\e\e]11;?\e\e\\\e\\'
+print -r -- "resolved tint now: ${_omnibar_bg:-<empty>}"

@@ -37,8 +37,15 @@ fi
 
 typeset -g _omnibar_bg=
 
-[[ -t 0 && -e /dev/tty ]] ||
-    return 0
+# Test hook: a pre-supplied reply skips the query, so the parsing and blending
+# can be exercised without a terminal to ask.
+local _omni_reply=
+if [[ -n ${_omnibar_tint_reply-} ]]; then
+  _omni_reply=$_omnibar_tint_reply
+else
+  [[ -t 0 && -e /dev/tty ]] ||
+      return 0
+fi
 
 local -i pct=15
 zstyle -s ":autocomplete:omnibar:" background-mix pct ||
@@ -46,20 +53,27 @@ zstyle -s ":autocomplete:omnibar:" background-mix pct ||
 (( pct < 0 )) && pct=0
 (( pct > 100 )) && pct=100
 
-local _omni_saved= _omni_reply= _omni_ch=
+local _omni_saved= _omni_ch=
+if [[ -z $_omni_reply ]]; then
 _omni_saved=$( stty -g < /dev/tty 2> /dev/null ) ||
     return 0
 
 {
   stty raw -echo min 0 time 0 < /dev/tty 2> /dev/null
 
-  # Wrapped for tmux: without the passthrough envelope tmux answers on its own
-  # behalf rather than forwarding to the real terminal.
-  if [[ -n $TMUX ]]; then
-    print -n '\ePtmux;\e\e]11;?\e\e\\\e\\' > /dev/tty
-  else
-    print -n '\e]11;?\e\\' > /dev/tty
-  fi
+  # Always the plain query, including under tmux.
+  #
+  # The passthrough envelope looks like the right thing -- it sends the query
+  # to the real terminal rather than letting tmux answer for itself -- but the
+  # reply then arrives at tmux and is never handed to the pane, so nothing is
+  # ever read. Measured under tmux 3.7c with allow-passthrough on:
+  #
+  #   plain      : REPLY \e]11;rgb:2828/2c2c/3434\e\\
+  #   passthrough: (no reply)
+  #
+  # tmux answers OSC 11 itself with the background it learned from the
+  # terminal it is attached to, which is what we want anyway.
+  print -n '\e]11;?\e\\' > /dev/tty
 
   # Bounded wait. A terminal that does not implement the query simply never
   # answers, and the shell must not stall at every prompt because of it.
@@ -74,6 +88,7 @@ _omni_saved=$( stty -g < /dev/tty 2> /dev/null ) ||
 } always {
   stty "$_omni_saved" < /dev/tty 2> /dev/null
 }
+fi
 
 # rgb:RRRR/GGGG/BBBB -- 16 bits per channel, though some terminals send 8.
 local _omni_hex="${_omni_reply#*rgb:}"

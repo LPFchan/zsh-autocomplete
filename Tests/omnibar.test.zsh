@@ -234,6 +234,46 @@ local comp_call=${CALLS[(r)*checkout*]}
 [[ $comp_call != *-U* ]] ||
     fail "completion run must NOT pass -U, or non-matching candidates survive: got '$comp_call'"
 
+# --- tint: parsing the terminal's background reply ------------------------
+
+# `local -i` remembers the base of a value assigned as `16#3d` and expands it
+# as the literal `16#3D`, which emitted the escape sequence as visible text
+# until the declarations became `local -i 10`. Worth pinning down.
+functions[.autocomplete__omnibar-tint]="$( < Functions/Util/.autocomplete__omnibar-tint )"
+
+# A real reply, captured from tmux 3.7c under Ghostty: background #282c34.
+typeset -g _omnibar_tint_reply=$'\e]11;rgb:2828/2c2c/3434\e\\'
+unset _omnibar_bg
+.autocomplete__omnibar-tint
+
+[[ $_omnibar_bg == '#484b52' ]] ||
+    fail "15% white over #282c34 should be #484b52: got '${_omnibar_bg:-<empty>}'"
+
+# A different mix must move the result, or the style is being ignored.
+zstyle ':autocomplete:omnibar:' background-mix 50
+unset _omnibar_bg
+.autocomplete__omnibar-tint
+[[ $_omnibar_bg == '#939599' ]] ||
+    fail "50% white over #282c34 should be #939599: got '${_omnibar_bg:-<empty>}'"
+zstyle -d ':autocomplete:omnibar:' background-mix
+
+# Garbage must yield no panel rather than a wrong colour: a near-miss paints a
+# block in almost-the-background-colour and reads as a rendering fault.
+_omnibar_tint_reply='no reply at all'
+unset _omnibar_bg
+.autocomplete__omnibar-tint
+[[ -z $_omnibar_bg ]] ||
+    fail "an unparseable reply must leave the panel off: got '$_omnibar_bg'"
+
+# An explicit colour must bypass the query entirely.
+zstyle ':autocomplete:omnibar:' background '#112233'
+unset _omnibar_bg
+.autocomplete__omnibar-tint
+[[ $_omnibar_bg == '#112233' ]] ||
+    fail "an explicit background should be used as-is: got '$_omnibar_bg'"
+zstyle -d ':autocomplete:omnibar:' background
+unset _omnibar_tint_reply
+
 if (( failures )); then
   print -u2 -- "$failures failure(s)"
   exit 1
