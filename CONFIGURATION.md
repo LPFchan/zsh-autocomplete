@@ -61,6 +61,30 @@ zstyle ':autocomplete:omnibar:' dim-typed no          # turn it off
 zstyle ':autocomplete:omnibar:' dim-sequence $'\e[90m'  # grey instead of faint
 ```
 
+### Showing more history
+The history block is capped, and when more matches exist a final row offers
+them:
+```
+ show 3 more from history
+```
+Select it and the history block grows; keep typing and it collapses back, since
+that is a new query.
+
+It grows by taking rows from the completions rather than making the list
+longer, because the list is bounded by your terminal height and not by choice.
+Autocomplete disables zsh's list pager, so a list taller than the window falls
+back to zsh asking *"do you wish to see all 49 possibilities?"* rather than
+scrolling. Expanding therefore redivides the screen.
+
+For the same reason there is no "more completions" row: completions already
+take every row history does not use, so a count of withheld completions just
+means "more than fit on screen", which no setting here can change. Use a taller
+window, or raise the history cap and read them there.
+
+```zsh
+zstyle ':autocomplete:omnibar:' history-lines 4   # starting size of the block
+```
+
 ### Icons
 Each row is prefixed with a Nerd Font glyph showing where it came from -- a
 clock for history, a terminal for commands, a folder for directories, and so

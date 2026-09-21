@@ -33,6 +33,28 @@ local -i hist_max
 zstyle -s ":autocomplete:omnibar:" history-lines hist_max ||
     hist_max=4
 
+# How many times "show more" has been pressed for *this* input. A stale count
+# from a previous command line is ignored rather than reset, because this runs
+# in a forked child whose writes would be discarded anyway.
+local -i more=0
+[[ $BUFFER == $_omnibar_more_buffer ]] &&
+    (( more = ${_omnibar_more:-0} ))
+
+# Only the history share grows. The total is left alone because it is bounded
+# by the window, not by choice: the plugin disables zsh's list pager
+# (.autocomplete__config deletes `list-prompt` and unsets LISTPROMPT), so a
+# list taller than the screen falls back to zsh asking "do you wish to see all
+# 49 possibilities?" instead of scrolling. Growing the total past the window
+# produced exactly that.
+#
+# Completions already take every row history does not, so there is nothing to
+# expand on that side -- "N more completions" simply means more than fit on
+# screen, which no setting here can change. Expanding therefore reallocates
+# the screen rather than enlarging it.
+(( hist_max += hist_max * more ))
+(( hist_max > shown - 2 )) &&
+    (( hist_max = shown - 2 ))
+
 local -a capped=()
 local -i seen_h=0 _oi
 for _oi in $order; do
@@ -214,6 +236,18 @@ done
 
 order=( $kept )
 
+# How much was held back, so the hint can say so. Counted from the ranked set
+# rather than the kept set, and per source, since the two are capped
+# separately.
+local -i total_h=0 total_c=0 kept_h=0 kept_c=0
+for _oi in $_omnibar_order; do
+  [[ $_omnibar_src[_oi] == h ]] && (( total_h++ )) || (( total_c++ ))
+done
+for _oi in $kept; do
+  [[ $_omnibar_src[_oi] == h ]] && (( kept_h++ )) || (( kept_c++ ))
+done
+local -i more_h=$(( total_h - kept_h )) more_c=$(( total_c - kept_c ))
+
 # Walk the ranked order and mark where the option set changes; each span
 # between boundaries becomes one compadd.
 local -i i idx cur=-1 start=1
@@ -255,5 +289,37 @@ for spec in $bounds; do
       "${(@P)${:-_omnibar_opts_$set_id}}" \
       -- "${(@)_omnibar_run_match}"
 done
+
+# "Show more" row, last in the group so it sits at the bottom of the list.
+#
+# It is a real match, because zsh has no row that runs an action: the text is
+# the word already typed plus a marker, and the line-pre-redraw hook strips the
+# marker and re-renders larger. -Q keeps the marker unquoted, -S '' stops a
+# space being appended, -U stops compadd re-filtering it.
+#
+# One row rather than one per source. Both sections widen together, so two rows
+# would be two ways to do the same thing -- and giving them distinct match
+# strings meant padding one with whitespace the hook then failed to strip.
+if (( more_h > 0 && hist_max < shown - 2 )) && [[ -n $_OMNIBAR_MORE ]]; then
+  local -a _omni_more_m=( "$PREFIX$SUFFIX$_OMNIBAR_MORE" )
+  local _omni_more_glyph=
+  (( use_icons )) &&
+      _omni_more_glyph="${icon[default]} "
+
+  # Only history is offered, because only history is actionable; see the note
+  # on the total above. Mentioning the withheld completions would advertise
+  # something selecting the row cannot deliver.
+  local _omni_more_text="show $more_h more from history"
+  (( more_h == 1 )) &&
+      _omni_more_text="show 1 more from history"
+
+  # Build the row first: parameter-expansion flags apply to a single named
+  # parameter, not to a concatenation, which is a "bad substitution".
+  local _omni_more_row="$_omni_more_glyph$_omni_more_text"
+  local -a _omni_more_d=( "${(mr:COLUMNS-1:)_omni_more_row}" )
+
+  builtin compadd -U -Q -S '' -V "$group" -l -d _omni_more_d \
+      -- "${(@)_omni_more_m}"
+fi
 
 return 0

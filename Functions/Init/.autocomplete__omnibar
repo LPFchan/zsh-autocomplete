@@ -46,6 +46,22 @@ builtin zstyle ':completion:*' completer _omnibar _ignored
   return 0
 }
 
+# "Show more" rows. The marker is appended to the word being completed and
+# stripped again by the line-pre-redraw hook below; see that file for why a row
+# has to work this way rather than simply running an action.
+#
+# Deliberately ugly and improbable: if the hook ever fails to fire, this lands
+# in the command line, and it should be obvious rather than silently plausible.
+typeset -g _OMNIBAR_MORE='@@omnibar-more@@'
+
+# The counter lives in the main shell; the completion pass runs in a forked
+# child and can only read it.
+typeset -gi _omnibar_more=0
+typeset -g _omnibar_more_buffer=
+
+builtin zle -N .autocomplete__omnibar-expand
+add-zle-hook-widget line-pre-redraw .autocomplete__omnibar-expand
+
 ##
 # Everything below has to happen at the first prompt rather than here.
 #

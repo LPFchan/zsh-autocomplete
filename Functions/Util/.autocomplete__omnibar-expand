@@ -1,0 +1,38 @@
+#!/bin/zsh
+# line-pre-redraw hook implementing the "show more" row.
+#
+# zsh has no notion of a list row that runs an action: selecting a row inserts
+# its match. So the row is a real match whose text is the word you already
+# typed with a marker appended, and this hook strips the marker straight back
+# off before the redraw lands. Appending rather than replacing matters --
+# inserting a bare marker would discard the word being completed, and there is
+# nothing left to restore it from once the completion pass has exited.
+#
+# Runs in the main shell, which is also where the counter has to live: the
+# completion pass happens in a forked pty child whose writes to globals are
+# discarded, so it can only read.
+
+[[ -n $_OMNIBAR_MORE ]] ||
+    return 0
+
+if [[ $LBUFFER == *$_OMNIBAR_MORE ]]; then
+  LBUFFER=${LBUFFER%$_OMNIBAR_MORE}
+
+  typeset -gi _omnibar_more=$(( ${_omnibar_more:-0} + 1 ))
+  typeset -g _omnibar_more_buffer=$BUFFER
+
+  # Redraw with the bigger list. Guarded because this is also reachable from
+  # contexts where the completion widget is not callable.
+  builtin zle .autocomplete:async:complete 2> /dev/null
+
+  return 0
+fi
+
+# Any other edit is a new query, so collapse back to the default size -- the
+# same way a browser's address bar does once you keep typing.
+if [[ -n $_omnibar_more_buffer && $BUFFER != $_omnibar_more_buffer ]]; then
+  typeset -gi _omnibar_more=0
+  typeset -g _omnibar_more_buffer=
+fi
+
+return 0
