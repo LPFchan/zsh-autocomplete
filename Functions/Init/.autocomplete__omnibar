@@ -9,6 +9,22 @@
 # The module system in `.autocomplete__main` gates every module on that style,
 # so no extra plumbing is needed for the escape hatch.
 
+# Autoload the completer explicitly instead of relying on `compinit` to pick it
+# up from Completions/.
+#
+# `compinit` only registers what it finds when it runs, and it does not always
+# get there: it runs from the compinit module's own `precmd`, is skipped
+# entirely when a readable dump already exists, and in some environments never
+# registers this plugin's Completions/ directory at all (upstream's own
+# `_autocomplete__unambiguous` goes missing the same way). When that happens
+# `_main_complete` fails with "command not found: _omnibar", the completer
+# produces nothing, and the list is silently empty -- which looks exactly like
+# a broken feature rather than a missing autoload.
+#
+# `~autocomplete/Completions` is put on $fpath by the plugin entry point, so
+# autoloading by name here is enough and costs nothing when compinit did work.
+builtin autoload -Uz _omnibar
+
 # One completer replaces Autocomplete's chain. `_omnibar` drives the chain
 # itself so it can intercept everything on the way out, and `_ignored` stays
 # behind it as the usual fallback.
@@ -55,7 +71,9 @@ ${0}:precmd() {
         builtin zstyle -d "${(Q)pattern[2]}" default-context 2> /dev/null
   done
 
-  # Re-assert the completer for the same reason: a .zshrc that sets its own
-  # `completer` style would otherwise take precedence over this module.
+  # Re-assert both for the same reason: a .zshrc that sets its own `completer`
+  # style would otherwise take precedence, and compinit may have run in between
+  # and replaced the function table.
+  builtin autoload -Uz _omnibar
   builtin zstyle ':completion:*' completer _omnibar _ignored
 }
