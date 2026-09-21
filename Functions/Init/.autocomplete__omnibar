@@ -23,7 +23,16 @@
 #
 # `~autocomplete/Completions` is put on $fpath by the plugin entry point, so
 # autoloading by name here is enough and costs nothing when compinit did work.
-builtin autoload -Uz _omnibar
+# Upstream's own helpers go missing the same way -- `_autocomplete__unambiguous`
+# in particular, whose "command not found" is printed straight onto the prompt
+# line and visibly corrupts the display.
+builtin autoload -Uz _omnibar \
+    _autocomplete__unambiguous \
+    _autocomplete__should_insert_unambiguous \
+    _autocomplete__history_lines \
+    _autocomplete__recent_paths \
+    _autocomplete__should_add_space \
+    _autocomplete__compadd_opts_len
 
 # One completer replaces Autocomplete's chain. `_omnibar` drives the chain
 # itself so it can intercept everything on the way out, and `_ignored` stays
@@ -74,6 +83,12 @@ ${0}:precmd() {
   # Re-assert both for the same reason: a .zshrc that sets its own `completer`
   # style would otherwise take precedence, and compinit may have run in between
   # and replaced the function table.
-  builtin autoload -Uz _omnibar
+  builtin autoload -Uz _omnibar \
+      _autocomplete__unambiguous \
+      _autocomplete__should_insert_unambiguous \
+      _autocomplete__history_lines \
+      _autocomplete__recent_paths \
+      _autocomplete__should_add_space \
+      _autocomplete__compadd_opts_len
   builtin zstyle ':completion:*' completer _omnibar _ignored
 }

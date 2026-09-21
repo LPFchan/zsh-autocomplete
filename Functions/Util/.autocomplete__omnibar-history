@@ -26,9 +26,14 @@ zstyle -s ":autocomplete:omnibar:" history-candidates budget ||
 local -a typed=( ${(@)words[1,CURRENT]} )
 typed=( ${typed:#} )
 
+# Anchor to the start of the command line. An unanchored `*git*c*` matches any
+# line containing "git" then "c" anywhere, which on a real history means every
+# long compound command that mentions git -- typing `git c` returned things
+# like `true; printf auth_git=; git -C ... rev-parse`. Useless, and it crowded
+# out the entries that did match.
 local pattern
 if (( $#typed )); then
-  pattern="*${(j:*:)typed}*"
+  pattern="${(j: :)typed}*"
 else
   pattern='*'
 fi
@@ -45,18 +50,29 @@ raw="$( fc -lm -- "$pattern" -1 1 2> /dev/null )"
 local -aU lines=( ${${(f)raw}##[[:blank:]]#<->[[:blank:]]##} )
 lines=( ${lines:#} )
 
+# Drop anything that still carries a leading history number: a multi-line
+# history entry prints continuation lines without one, and splitting on
+# newlines turns those into fragments like `rue; printf ...`.
+lines=( ${(@)lines:#[[:blank:]]*} )
+
 (( $#lines > budget )) &&
     lines=( $lines[1,budget] )
 
 (( $#lines )) ||
     return 0
 
+# Truncate to the terminal width. A command line is often far longer than the
+# window, and an untruncated entry wraps onto two or three rows, which turns an
+# interleaved list into an unreadable block. Upstream's history source pads to
+# COLUMNS-1 for exactly this reason.
+local -a display=( ${(@mr:COLUMNS-1:)lines} )
+
 local -i before=$#_omnibar_match
 
 # -Q so the line is inserted as-is rather than requoted, and -U so compadd
 # does not re-filter it against the current word; this source has already
 # decided what matches.
-compadd -Q -U -S '' -- "${(@)lines}"
+compadd -Q -U -S '' -d display -- "${(@)lines}"
 
 # Tag what was just added as history so the ranker can tell the sources apart;
 # the collector marks everything as completion by default.
