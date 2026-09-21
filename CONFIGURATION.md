@@ -104,17 +104,25 @@ zstyle ':autocomplete:omnibar:' left-margin 4   # or 0 for none
 The margin is counted against each row's width, so indenting does not push long
 rows into wrapping.
 
+The gap between the icon and the row text is three columns:
+```zsh
+zstyle ':autocomplete:omnibar:' icon-gap 3
+```
+Margin plus one glyph plus gap is what sets the column the text starts in, so
+a prompt indented the same way lines the two up exactly.
+
 This indents the completion list only. The prompt above it is drawn by your
-prompt program, not by Autocomplete. With Starship, a matching indent is:
+prompt program, not by Autocomplete. The Starship equivalent, matching the
+defaults above:
 ```toml
 # ~/.config/starship.toml
 format = "  $all"
 
 [character]
-format = "  $symbol "
+format = "  $symbol   "
 ```
-The second block is what indents the line you actually type on; `format` alone
-only shifts the lines above it.
+The `[character]` block is what indents the line you actually type on; `format`
+alone only shifts the lines above it.
 
 ### Icons
 Each row is prefixed with a Nerd Font glyph showing where it came from -- a

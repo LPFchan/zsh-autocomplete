@@ -183,6 +183,16 @@ zstyle -s ":autocomplete:omnibar:" left-margin _omni_margin ||
 (( _omni_margin < 0 )) && _omni_margin=0
 local _omni_pad="${(l:_omni_margin:: :)}"
 
+# Gap between the icon and the row text. Three columns by default so the text
+# lines up with a prompt indented the same way -- margin, one glyph, gap -- and
+# the list reads as a continuation of the line you are typing on rather than a
+# separate block pressed against the edge.
+local -i _omni_gap=0
+zstyle -s ":autocomplete:omnibar:" icon-gap _omni_gap ||
+    _omni_gap=3
+(( _omni_gap < 1 )) && _omni_gap=1
+local _omni_gapstr="${(l:_omni_gap:: :)}"
+
 local -A icon=()
 if (( use_icons )); then
   # Literal UTF-8, not $'\uXXXX': those are converted at run time and fail
@@ -302,7 +312,7 @@ for _oi in $order; do
     # Completion tags are plural (`commands`, `options`); drop the trailing s
     # so one table entry covers both spellings.
     _omni_tag=${${_omnibar_tag[_oi]:-default}%s}
-    _omni_glyph="$_omni_pad${icon[$_omni_tag]:-$icon[default]} "
+    _omni_glyph="$_omni_pad${icon[$_omni_tag]:-$icon[default]}$_omni_gapstr"
   else
     _omni_glyph="$_omni_pad"
   fi
@@ -444,7 +454,7 @@ if (( gain > 0 )) && [[ -n $_OMNIBAR_MORE ]]; then
   local _omni_more_glyph=
   _omni_more_glyph="$_omni_pad"
   (( use_icons )) &&
-      _omni_more_glyph="$_omni_pad${icon[default]} "
+      _omni_more_glyph="$_omni_pad${icon[default]}$_omni_gapstr"
 
   # Only history is offered, because only history is actionable; see the note
   # on the total above. Mentioning the withheld completions would advertise
