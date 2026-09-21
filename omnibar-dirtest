@@ -1,0 +1,50 @@
+#!/bin/zsh -f
+# Does completion inside a directory work?
+#
+#   omnibar-dirtest <plugin-dir|none> <buffer> [reps]
+#   omnibar-dirtest none 'ls plaindir/' 1      # control: plain zsh
+#   omnibar-dirtest . 'ls plaindir/' 3         # this checkout
+#
+# Drives a real interactive zsh in a tmux pane, because the list is drawn
+# asynchronously and only exists on a terminal. Repeats because a single
+# sample is not trustworthy: an eight-second settle renders reliably, a
+# seven-second one does not, and reading "nothing on screen" as "broken"
+# sent an earlier bisect to the wrong conclusion entirely.
+emulate -L zsh
+local plugin=$1 buf=$2
+local -i reps=${3:-3}
+
+local S=$(mktemp -d)
+mkdir -p $S/.cache/zsh $S/.local/state $S/plaindir $S/.agents
+touch $S/plaindir/one.txt $S/plaindir/two.txt $S/.agents/AGENTS.md
+mkdir -p $S/.agents/skills
+[[ -d $HOME/.cache/zsh/zasync ]] && cp -r $HOME/.cache/zsh/zasync $S/.cache/zsh/zasync
+: > $S/.zsh_history
+{
+  print -r -- "export XDG_CACHE_HOME=$S/.cache"
+  print -r -- "export XDG_STATE_HOME=$S/.local/state"
+  print -r -- "HISTFILE=$S/.zsh_history"
+  print -r -- 'HISTSIZE=1000 SAVEHIST=1000'
+  print -r -- 'autoload -Uz compinit; compinit -u -d '$S'/.zcd'
+  [[ $plugin != none ]] && print -r -- "source $plugin/zsh-autocomplete.plugin.zsh"
+  print -r -- 'PS1="RDY> "'
+} > $S/.zshrc
+
+local -i hits=0 r
+local out
+for (( r = 1; r <= reps; r++ )); do
+  tmux kill-session -t dirt 2>/dev/null
+  tmux new-session -d -s dirt -c "$S" -x 88 -y 14 \
+      "env -i HOME=$S ZDOTDIR=$S PATH=$PATH LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=tmux-256color zsh -i"
+  sleep 8
+  tmux send-keys -t dirt "$buf"
+  sleep 8
+  # For plain zsh there is no async list, so ask for it.
+  [[ $plugin == none ]] && { tmux send-keys -t dirt Tab; sleep 3 }
+  out=$( tmux capture-pane -p -t dirt | sed '/^$/d' | grep -v '^RDY' )
+  [[ $out == *one.txt* || $out == *AGENTS.md* ]] && (( hits++ ))
+  [[ $r == 1 ]] && print -r -- "  first run: ${out:-<nothing>}" | head -3
+  tmux kill-session -t dirt 2>/dev/null
+done
+print -r -- "  completed $hits/$reps"
+rm -rf $S

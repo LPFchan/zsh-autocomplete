@@ -120,24 +120,44 @@ fi
 
 local -a _omni_cand=() _omni_matched=()
 local -i _oc=0
-for _oc in $_omnibar_order; do
-  [[ $_omnibar_src[_oc] == c ]] &&
-      _omni_cand+=( "$_omnibar_match[_oc]" )
-done
 
-if (( $#_omni_cand )); then
-  if [[ -n $_matcher ]]; then
-    builtin compadd -O _omni_matched -M "$_matcher" -- "${(@)_omni_cand}" 2> /dev/null
-  else
-    builtin compadd -O _omni_matched -- "${(@)_omni_cand}" 2> /dev/null
-  fi
+# Probe per option set, with that set's own options.
+#
+# The candidates were generated under those options and only match in their
+# presence. `_files` in particular adds bare names -- `one.txt` -- together
+# with a `-W`/`-p` directory prefix, so compadd matches them against the part
+# of the word after the last slash. Probing them with a bare `-M` instead
+# matches `one.txt` against the whole word `plaindir/`, finds nothing, and
+# prunes every file away: completion inside any directory returned "no
+# matching file or directory completions".
+local -A _omni_ok=()
+local _omni_m=
+local -i _os=0 _probed=0
 
-  local -A _omni_ok=()
-  local _omni_m=
+for (( _os = 1; _os <= _omnibar_noptsets; _os++ )); do
+  _omni_cand=()
+  for _oc in $_omnibar_order; do
+    [[ $_omnibar_src[_oc] == c && $_omnibar_optset[_oc] == $_os ]] &&
+        _omni_cand+=( "$_omnibar_match[_oc]" )
+  done
+  (( $#_omni_cand )) ||
+      continue
+
+  _omni_matched=()
+  builtin compadd -O _omni_matched \
+      "${(@P)${:-_omnibar_opts_$_os}}" \
+      ${_matcher:+-M "$_matcher"} \
+      -- "${(@)_omni_cand}" 2> /dev/null
+
+  _probed=1
   for _omni_m in $_omni_matched; do
     _omni_ok[$_omni_m]=1
   done
+done
 
+# Prune only if a probe actually ran. An option set that cannot be replayed
+# would otherwise look like "nothing matches" and take the whole list with it.
+if (( _probed )); then
   local -a _omni_pruned=()
   for _oc in $_omnibar_order; do
     [[ $_omnibar_src[_oc] == c && -z ${_omni_ok[$_omnibar_match[_oc]]-} ]] &&
@@ -148,10 +168,14 @@ if (( $#_omni_cand )); then
 fi
 
 # The working copy is taken here, after every filter that can shrink the pool:
-# the hide-until-typed pass above and the match-pruning pass before it. Copying
-# it earlier left the build pass walking candidates that had already been
-# rejected -- they were emitted, compadd dropped them, and the list came out
-# shorter than the window with nothing to show why.
+# the per-option-set pruning above and the hide-until-typed pass before it.
+# Taking it earlier leaves the selection pass walking candidates that were
+# already rejected.
+#
+# This line was lost when the pruning block was rewritten, and nothing
+# complained: `order` simply stayed empty, the selection pass kept nothing, and
+# the list came out as "no matching completions" -- the very symptom the
+# rewrite was meant to fix.
 local -a order=( $_omnibar_order )
 
 local -i avail_h=0 avail_c=0
@@ -377,7 +401,23 @@ for _oi in $order; do
   if [[ $_omnibar_src[_oi] == h ]]; then
     _omni_body="$_omnibar_disp[_oi]"
   else
-    _omni_body="$_omni_ctx$_omnibar_disp[_oi]"
+    # `-p` is compadd's hidden prefix: inserted but not matched against. File
+    # completion inside a directory uses it, adding bare names like `one.txt`
+    # with `-p plaindir/`, so the word that lands on the line is
+    # `plaindir/one.txt`. Without prepending it the row read `ls one.txt`,
+    # which is not the command it would produce -- and these rows exist
+    # precisely to read as the finished command.
+    #
+    # Only from `-p`, not from PREFIX: an ordinary completion's match already
+    # contains what was typed, so adding PREFIX as well would double it and
+    # turn `git c` into `git ccheckout`.
+    local -a _omni_os=( "${(@P)${:-_omnibar_opts_$_omnibar_optset[_oi]}}" )
+    local -i _pi=${_omni_os[(i)-p]}
+    local _omni_hp=
+    (( _pi < $#_omni_os )) &&
+        _omni_hp="$_omni_os[_pi+1]"
+
+    _omni_body="$_omni_ctx$_omni_hp$_omnibar_disp[_oi]"
   fi
 
   if (( use_icons )); then
