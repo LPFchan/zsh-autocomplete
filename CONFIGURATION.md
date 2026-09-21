@@ -63,13 +63,26 @@ Recognised tags: `history`, `command`, `executable`, `builtin`, `alias`,
 `function`, `parameter`, `option`, `file`, `globbed-file`, `directory`,
 `local-directory`, and `default` for anything else.
 
-### Grouping history together
-By default history and completions interleave strictly by rank. To keep history
-as a block at the top instead, which reads more calmly when your history lines
-are long, give it a large negative bias:
+### Layout
+History appears as a block above the completions, rather than interleaved
+strictly by rank. Interleaving is what the ranking naturally produces, and it
+reads badly in practice: a history entry is a full command line and a
+completion is a short padded `name -- description`, so alternating them zigzags
+between two row widths and the eye never settles.
+
+To interleave anyway:
 ```zsh
-zstyle ':autocomplete:omnibar:' bias-history -100000
+zstyle ':autocomplete:omnibar:' bias-history 0
 ```
+
+The history block is capped, because ranking will happily return twenty
+near-identical `git clone ...` lines and crowd out the completions:
+```zsh
+zstyle ':autocomplete:omnibar:' history-lines 4   # history rows shown
+```
+Rows too wide for the window are cut with an ellipsis. Two long commands that
+differ only past the cut would otherwise render as two identical-looking rows,
+so de-duplication runs on the finished row text, not just the raw command.
 
 ### Tuning the ranking
 There is no correct way to rank a command you ran yesterday against a flag you

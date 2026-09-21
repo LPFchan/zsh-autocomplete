@@ -25,6 +25,25 @@ zstyle -s ":autocomplete:omnibar:" list-lines shown ||
 (( shown > 0 )) || shown=16
 
 local -a order=( $_omnibar_order )
+
+# Cap the history block. Ranking will happily return twenty near-identical
+# `git clone ...` lines, which crowds out the completions and reads as noise;
+# a handful of the most recent is all that is useful.
+local -i hist_max
+zstyle -s ":autocomplete:omnibar:" history-lines hist_max ||
+    hist_max=4
+
+local -a capped=()
+local -i seen_h=0 _oi
+for _oi in $order; do
+  if [[ $_omnibar_src[_oi] == h ]]; then
+    (( seen_h++ >= hist_max )) &&
+        continue
+  fi
+  capped+=( $_oi )
+done
+order=( $capped )
+
 (( $#order > shown )) &&
     order=( $order[1,shown] )
 
@@ -80,6 +99,64 @@ if (( use_icons )); then
   done
 fi
 
+# Build each row now, and use the finished text to filter. Two things can only
+# be judged once the row exists:
+#
+#   * the history cap, so a run of twenty near-identical `git clone ...` lines
+#     cannot crowd out the completions
+#   * duplicate rows. De-duplicating on the raw match string is not enough:
+#     two long commands differing only past the truncation point produce rows
+#     that are character-for-character identical on screen, which reads as a
+#     bug rather than as two different commands.
+typeset -ga _omnibar_row=()
+local -a kept=()
+local -A row_seen=()
+local -i seen_h=0 _oi=0
+local _omni_glyph= _omni_tag= _omni_line=
+
+for _oi in $order; do
+  if [[ $_omnibar_src[_oi] == h ]]; then
+    (( seen_h >= hist_max )) &&
+        continue
+  fi
+
+  if (( use_icons )); then
+    # Completion tags are plural (`commands`, `options`); drop the trailing s
+    # so one table entry covers both spellings.
+    _omni_tag=${${_omnibar_tag[_oi]:-default}%s}
+    _omni_glyph=${icon[$_omni_tag]:-$icon[default]}
+    _omni_line="$_omni_glyph ${_omnibar_disp[_oi]}"
+  else
+    _omni_line="$_omnibar_disp[_oi]"
+  fi
+
+  # Truncate once the row is complete, glyph included. Doing it in the source
+  # leaves the glyph and its space unaccounted for, so a full-width history
+  # line spills onto a second row and the redraw falls apart. The `m` flag
+  # counts display width rather than bytes, so wide glyphs measure correctly.
+  # The ellipsis marks a clipped row as clipped, instead of looking like a
+  # command that genuinely ends mid-word.
+  if (( ${#_omni_line} > COLUMNS - 1 )); then
+    _omni_line="${(mr:COLUMNS-2:)_omni_line}…"
+  fi
+  _omni_line="${(mr:COLUMNS-1:)_omni_line}"
+
+  [[ -n ${row_seen[$_omni_line]-} ]] &&
+      continue
+  row_seen[$_omni_line]=1
+
+  [[ $_omnibar_src[_oi] == h ]] &&
+      (( seen_h++ ))
+
+  kept+=( $_oi )
+  _omnibar_row+=( "$_omni_line" )
+
+  (( $#kept >= shown )) &&
+      break
+done
+
+order=( $kept )
+
 # Walk the ranked order and mark where the option set changes; each span
 # between boundaries becomes one compadd.
 local -i i idx cur=-1 start=1
@@ -104,26 +181,10 @@ for spec in $bounds; do
   set_id=${spec##*:}
 
   typeset -ga _omnibar_run_match=() _omnibar_run_disp=()
-  local _omni_glyph= _omni_tag= _omni_line=
   for (( j = from; j <= to; j++ )); do
     idx=$order[j]
     _omnibar_run_match+=( "$_omnibar_match[idx]" )
-
-    if (( use_icons )); then
-      # Completion tags are plural (`commands`, `options`); drop the trailing
-      # s so one table entry covers both spellings.
-      _omni_tag=${${_omnibar_tag[idx]:-default}%s}
-      _omni_glyph=${icon[$_omni_tag]:-$icon[default]}
-      _omni_line="$_omni_glyph ${_omnibar_disp[idx]}"
-    else
-      _omni_line="$_omnibar_disp[idx]"
-    fi
-
-    # Truncate here, once the row is fully built. Doing it in the source
-    # instead leaves the glyph and its space unaccounted for, so a full-width
-    # history line spills onto a second row and the redraw goes to pieces.
-    # The `m` flag counts display width, not bytes, so wide glyphs are safe.
-    _omnibar_run_disp+=( "${(mr:COLUMNS-1:)_omni_line}" )
+    _omnibar_run_disp+=( "$_omnibar_row[j]" )
   done
 
   # -l with -d lists one display string per line, which is the row-per-entry

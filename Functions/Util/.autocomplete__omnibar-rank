@@ -37,7 +37,13 @@ setopt localoptions extendedglob
 local -i w_pos w_rank bias_h bias_c
 zstyle -s ":autocomplete:omnibar:" weight-position w_pos  || w_pos=100
 zstyle -s ":autocomplete:omnibar:" weight-rank     w_rank || w_rank=10
-zstyle -s ":autocomplete:omnibar:" bias-history    bias_h || bias_h=0
+# History is grouped above the completions by default rather than interleaved
+# strictly by rank. Interleaving is what the ranking naturally produces, and it
+# reads badly: a history entry is a full command line and a completion is a
+# short padded `name -- description`, so alternating them zigzags between two
+# row widths and the eye cannot settle. Two calm blocks beat one ranked jumble.
+# Set this to 0 to interleave.
+zstyle -s ":autocomplete:omnibar:" bias-history    bias_h || bias_h=-100000
 zstyle -s ":autocomplete:omnibar:" bias-completion bias_c || bias_c=0
 
 local needle_c=$PREFIX$SUFFIX
