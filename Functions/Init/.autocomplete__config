@@ -11,7 +11,7 @@ autocomplete:config:cache-path() {
 }
 
 builtin zstyle ':completion:*' completer \
-    _expand _complete _complete:-fuzzy _correct _approximate _ignored
+    _expand _complete _complete:-fuzzy _prefix _correct _ignored
 
 builtin zstyle -e ':completion:*' max-errors autocomplete:config:max-errors
 autocomplete:config:max-errors() {
@@ -26,12 +26,14 @@ local any_before_any='r:|?=**'
 local nonseparators_after_any_before_separator='r:?||[-_ \]=*'
 local any_before_word='l:|=*'
 local separator_after_any='l:?|=[-_ \]'
+
 builtin zstyle ':completion:*' matcher-list \
     "$lower_to_upper $any_before_dot"
-builtin zstyle ':completion:*-fuzzy:*' matcher-list \
+builtin zstyle ':completion:*:*-fuzzy:*' matcher-list \
     "$lower_to_upper $any_before_dot $any_before_word" \
     "+$nonseparators_after_any_before_separator $separator_after_any" \
     "$lower_to_upper $any_before_any"
+builtin zstyle -e ':completion:*:correct:*' matcher-list ''
 
 local minus_at_beginning_to_plus='b:-=+'
 builtin zstyle ':completion:*:options' matcher $minus_at_beginning_to_plus
@@ -52,74 +54,95 @@ builtin zstyle ':completion:*:expand:*' keep-prefix no  # Needed for file type h
 builtin zstyle ':completion:*:expand:*' substitute yes
 builtin zstyle ':completion:*:expand:*' subst-globs-only yes
 
-builtin zstyle -e ':completion:*:-command-:*' tag-order autocomplete:config:tag-order:command
-autocomplete:config:tag-order:command() {
-  if [[ $PREFIX == (|.|*/*) ]]; then
-    typeset -ga reply=( 'suffix-aliases (|*-)directories executables (|*-)files' - )
+builtin zstyle ':completion:*:builtin:*' tag-order \
+    'commands builtins' -
+builtin zstyle ':completion:*:command:*' tag-order \
+    'argument-rest commands options option-[Vv]-rest' -
+
+builtin zstyle -e ':completion:*:-command-:*' tag-order autocomplete:config:tag-order:-command-
+autocomplete:config:tag-order:-command-() {
+  case $PREFIX$SUFFIX in
+  ( */* )
+    reply=( 'executables' 'suffix-aliases' )
+  ;;
+  ( *.* )
+    reply=( 'suffix-aliases' )
+  ;;
+  ( * )
+    reply=( '(reserved-words|aliases|functions|builtins|commands):commands:command' )
+  ;;
+  esac
+}
+
+builtin zstyle -e ':completion:*:prefix:*' add-space autocomplete:config:add-space:prefix
+autocomplete:config:add-space:prefix() {
+  if _autocomplete__should_add_space; then
+    reply=( yes )
   else
-    typeset -ga reply=( 'aliases suffix-aliases functions reserved-words builtins' )
-    if (( path[(I).] )); then
-      reply[1]+=' (|*-)directories executables (|*-)files commands'
-    else
-      reply[1]+=' commands (|*-)directories executables (|*-)files'
-    fi
+    reply=( no )
   fi
 }
+builtin zstyle ':completion:*:-command-:*' file-patterns '%p *(-/):directories:directory'
+
 builtin zstyle ':completion:*:-tilde-:*' tag-order directory-stack named-directories
 
-builtin zstyle ':completion:*:(approximate|correct):*' tag-order '! original' -
+builtin zstyle ':completion:*:(approximate|correct|match):*' tag-order '! original' -
 
-# Complete options rather than directory stack. You can get directory stack by typing `~-` (tilde plus dash).
+# Complete options rather than directory stack. You can get directory stack by typing `~-` (tilde
+# plus dash).
 builtin zstyle ':completion:*:cd:*' complete-options yes
 builtin zstyle ':completion:*:cd:*' tag-order '! directory-stack' -
 
 # Don't show the giant list of history lines.
 builtin zstyle ':completion:*:fc:*' tag-order options -
 
-builtin zstyle -e ':completion:*:git-*:*' tag-order 'autocomplete:config:tag-order:git "$@"'
+builtin zstyle -e ':completion:*:git-*:*' tag-order autocomplete:config:tag-order:git
 autocomplete:config:tag-order:git() {
+  typeset -g _autocomplete_tag_order="$_comp_tags"
   reply=()
-  (( compstate[nmatches] )) &&
-      reply=(
-          '! heads(|-*) *-remote remote-* blob-*'
-          -
-      )
+
+  (( $compstate[nmatches] )) ||
+      return 0
+
+  local exclude='files local-repositories recent-branches remote-branch-names-noprefix'
+  case $_comp_tags in
+  ( *' commit-tags  '* )
+    exclude+=' commit-tags'
+  ;|
+  ( *' heads-local '* )
+    exclude+=' heads(|-*)'
+  ;|
+  esac
+  reply+=( "! $exclude" - )
 }
 
 # Complete only the tail of a path.
-builtin zstyle ':completion:*' ignore-parents 'parent pwd directory'
+builtin zstyle ':completion:*' parents 'parent pwd directory'
 builtin zstyle ':completion:*:paths' expand suffix
 builtin zstyle ':completion:*:paths' list-suffixes yes
 builtin zstyle ':completion:*:paths' special-dirs no
 
-builtin zstyle ':completion:*'             group-name ''
-builtin zstyle ':completion:*:-command-:*' group-name commands
-builtin zstyle ':completion:*:all-expansions' group-name 'expansion'
+builtin zstyle ':completion:*'                group-name ''
+# builtin zstyle ':completion:*:all-expansions' group-name 'expansion'
 
 builtin zstyle ':completion:*' group-order \
     expansions all-expansions options \
-    aliases suffix-aliases functions reserved-words builtins commands \
-    remotes hosts recent-branches commits \
-    local-directories directories executables
+    remotes hosts recent-branches heads-local commits commit-tags \
+    executables suffix-aliases \
+    reserved-words aliases functions builtins commands \
+    local-directories directories
 
 builtin zstyle    ':completion:*'               file-patterns '*(-/):directories:directory %p(#q^-/):globbed-files'
-builtin zstyle -e ':completion:*:-command-:*'   file-patterns autocomplete:config:file-patterns:command
-autocomplete:config:file-patterns:command() {
-  [[ $PREFIX$SUFFIX != */* ]] &&
-      typeset -ga reply=( '*(-/):directories:directory ./*(-*^/):executables:"executable file"' )
-}
 builtin zstyle    ':completion:*:(.|source):*'  file-patterns \
     '%p(#q-/):directories:directory %p~*.zwc(-.^*):globbed-files' '%p~*.zwc(-^/):globbed-files'
 
 # Don't combine parameters with same values.
 builtin zstyle ':completion:*:parameters' list-grouped no
 
-builtin zstyle -e ':completion:*:-command-:*'    format autocomplete:config:format command
-builtin zstyle -e ':completion:*:descriptions'   format autocomplete:config:format %d
-builtin zstyle -e ':completion:*:all-expansions' format autocomplete:config:format expansion
 autocomplete:config:format() {
   reply=( $'%{\e[0;1;2m%}'$1$'%{\e[0m%}' )
 }
+builtin zstyle -e ':completion:*:descriptions'   format autocomplete:config:format %d
 builtin zstyle -e ':completion:*:all-expansions' format autocomplete:config:format expansion
 builtin zstyle -e ':completion:*:expansions'     format autocomplete:config:format '"globbed files"'
 

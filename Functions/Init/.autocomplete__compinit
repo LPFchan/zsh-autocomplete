@@ -33,15 +33,10 @@ ${0}:precmd() {
   typeset -g \
       _comp_dumpfile=${_comp_dumpfile:-${ZSH_COMPDUMP:-${XDG_CACHE_HOME:-$HOME/.cache}/zsh/compdump}}
 
-  if [[ -v _comps[-command-] && $_comps[-command-] != _autocomplete__command ]]; then
+  # Check if our most recently modified completion function is newer than the comp dump file.
+  local -Pa newest=( ~autocomplete/Completions/_*~*.zwc(N-.omY1) )
+  if [[ $newest[1] -nt $_comp_dumpfile ]]; then
     zf_rm -f $_comp_dumpfile
-  else
-
-    # Check if our most recently modified completion function is newer than the comp dump file.
-    local -Pa newest=( ~autocomplete/Completions/_*~*.zwc(N-.omY1) )
-    if [[ $newest[1] -nt $_comp_dumpfile ]]; then
-      zf_rm -f $_comp_dumpfile
-    fi
   fi
 
   if [[ ! -v _comp_setup ]] || [[ ! -r $_comp_dumpfile ]]; then
@@ -102,7 +97,6 @@ EOF
 
     local +h -a  compprefuncs=( autocomplete:_main_complete:new:pre  "$compprefuncs[@]" )
     local +h -a comppostfuncs=( autocomplete:_main_complete:new:post "$comppostfuncs[@]" )
-    # functions -T autocomplete:_main_complete:old
 
     autocomplete:_main_complete:old "$@"
     # functions +T _path_files
@@ -113,16 +107,11 @@ EOF
 
   autocomplete:_main_complete:new:pre() {
     unsetopt localtraps
-    trap -
-    TRAPINT() {  # ^C
-      zle -M "${(F)funcfiletrace}"
+    trap - INT QUIT
+    TRAPINT TRAPQUIT () {  # ^C ^/
+      zle -M "$( printf $'%s (%s)\n' "${(@)functrace:^^funcfiletrace}" )"
       zle -R
-      return 130
-    }
-    TRAPQUIT() { # ^\
-      zle -M "${(F)funcfiletrace}"
-      zle -R
-      return 131
+      return $1
     }
   }
 
@@ -134,23 +123,9 @@ EOF
     MENUSCROLL=0
   }
 
-  .autocomplete__patch _complete
-  _complete() {
-    local -i nmatches=$compstate[nmatches]
-
-    PREFIX=$PREFIX$SUFFIX
-    SUFFIX=
-    autocomplete:_complete:old "$@"
-
-    # WORKAROUND: Some completion functions mistakenly don't return 0 when they have succeeded.
-    (( compstate[nmatches] > nmatches ))
-  }
-
-
   ##
   # WORKAROUND: _approximate won't do corrections if there already is a function called 'compadd'.
   #
-
   .autocomplete__patch _approximate
   _approximate() {
     {
