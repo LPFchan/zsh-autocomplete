@@ -280,10 +280,6 @@ if zstyle -T ":autocomplete:omnibar:" dim-typed; then
   (( _omni_esclen = ${#_omni_dim} + ${#_omni_off} ))
 fi
 
-typeset -ga _omnibar_row=()
-local -a kept=()
-local -A row_seen=()
-local -i seen_h=0 _oi=0
 local _omni_glyph= _omni_tag= _omni_line= _omni_body=
 
 # Rows held back by the cap, as opposed to rows dropped as duplicates. Only
@@ -292,6 +288,24 @@ local _omni_glyph= _omni_tag= _omni_line= _omni_body=
 # because the row it was counting had been deliberately collapsed as identical
 # to one already on screen.
 local -i withheld_h=0 _opos=0 _oj=0
+
+# Selection happens first and formatting second, because the description
+# column cannot be placed until the longest name among the rows actually shown
+# is known. `_describe` pads every name to the width of the longest candidate
+# it was handed -- including ones filtered out before display -- which left the
+# `--` sitting some forty columns right of a name like `docker run`, and that
+# wasted width is what forced the descriptions to be truncated.
+local -a kept=() _keep_glyph=() _keep_name=() _keep_desc=()
+local -A row_seen=()
+local -i seen_h=0 _oi=0
+local _omni_glyph= _omni_tag= _omni_line= _omni_body=
+
+# zsh's own separator between a completion and its description, `--` unless
+# changed.
+local _omni_sep=
+zstyle -s ":completion:${curcontext}:" list-separator _omni_sep ||
+    zstyle -s ':completion:*' list-separator _omni_sep ||
+    _omni_sep='--'
 
 for _oi in $order; do
   (( _opos++ ))
@@ -320,40 +334,34 @@ for _oi in $order; do
     _omni_glyph="$_omni_pad"
   fi
 
-  # Fit the plain text first. Truncating after the escapes are in would count
-  # them as visible characters and cut the row short. The `m` flag measures
-  # display width rather than bytes, so the glyph is counted correctly. The
-  # ellipsis marks a clipped row as clipped, rather than looking like a
-  # command that genuinely ends mid-word.
-  # Subtract the escape sequences from the budget as well. zsh measures the
-  # raw string when it works out how many screen lines a row needs, escapes
-  # included, so a row that fits on paper is counted as two lines and the
-  # listing turns into "do you wish to see all 16 possibilities (32 lines)?".
-  local -i _omni_budget=$(( COLUMNS - 1 - ${#_omni_glyph} - _omni_esclen ))
-  (( _omni_budget < 8 )) && _omni_budget=8
-  if (( ${#_omni_body} > _omni_budget )); then
-    _omni_body="${(mr:_omni_budget-1:)_omni_body}…"
-  fi
-  _omni_body="${(mr:_omni_budget:)_omni_body}"
-
-  # De-duplicate on the plain text: two long commands differing only past the
-  # cut render as identical rows, which reads as a bug.
+  # De-duplicate on the untruncated body. Doing it after truncation is not
+  # enough on its own -- two long commands differing only past the cut render
+  # identically -- but doing it here as well keeps the check independent of
+  # how wide the column turns out to be.
   [[ -n ${row_seen[$_omni_glyph$_omni_body]-} ]] &&
       continue
   row_seen[$_omni_glyph$_omni_body]=1
 
-  if [[ -n $_omni_dim ]] && (( _omni_tlen > 0 )) &&
-      [[ $_omni_body[1,_omni_tlen] == $_omni_typed ]]; then
-    _omni_line="$_omni_glyph$_omni_dim$_omni_body[1,_omni_tlen]$_omni_off$_omni_body[_omni_tlen+1,-1]"
-  else
-    _omni_line="$_omni_glyph$_omni_body"
+  # Split name from description at the first separator surrounded by spaces.
+  # First, not last: a description may itself contain `--`, as option help
+  # routinely does.
+  local _nm="$_omni_body" _ds=
+  if [[ $_omnibar_src[_oi] != h ]]; then
+    local -i _sp=${_omni_body[(i) $_omni_sep ]}
+    if (( _sp <= ${#_omni_body} )); then
+      _nm="${_omni_body[1,_sp-1]%%[[:space:]]##}"
+      _ds="${_omni_body[_sp + ${#_omni_sep} + 2,-1]}"
+    fi
   fi
+
+  _keep_glyph+=( "$_omni_glyph" )
+  _keep_name+=( "$_nm" )
+  _keep_desc+=( "$_ds" )
 
   [[ $_omnibar_src[_oi] == h ]] &&
       (( seen_h++ ))
 
   kept+=( $_oi )
-  _omnibar_row+=( "$_omni_line" )
 
   if (( $#kept >= shown )); then
     # Everything past this point is held back by the window, so count the
@@ -366,7 +374,73 @@ for _oi in $order; do
   fi
 done
 
-order=( $kept )
+# Where the description column starts: one column past the longest name that
+# actually has a description. Names without one do not widen it, or a long
+# history line would push every description off the screen.
+local -i _namew=0 _k=0
+for (( _k = 1; _k <= $#kept; _k++ )); do
+  [[ -n $_keep_desc[_k] ]] &&
+      (( ${#_keep_name[_k]} > _namew )) &&
+      (( _namew = ${#_keep_name[_k]} ))
+done
+
+# De-duplicate again on the finished row, not only on the untruncated body.
+# Both are needed: the body catches candidates that are genuinely the same,
+# and the finished row catches two different long commands that happen to be
+# identical up to the cut -- which render as the same line and read as a bug.
+# Collapsing here means `kept` has to be rebuilt alongside the rows.
+typeset -ga _omnibar_row=()
+local -a _final=()
+local -A _final_seen=()
+
+for (( _k = 1; _k <= $#kept; _k++ )); do
+  _omni_glyph="$_keep_glyph[_k]"
+
+  # zsh measures a row's display string in bytes when working out how many
+  # screen lines it needs, escapes included, so the dim sequences have to come
+  # out of the budget -- otherwise every row counts as two and the list
+  # collapses into "do you wish to see all 16 possibilities (32 lines)?".
+  local -i _omni_budget=$(( COLUMNS - 1 - ${#_omni_glyph} - _omni_esclen ))
+  (( _omni_budget < 8 )) && _omni_budget=8
+
+  if [[ -n $_keep_desc[_k] ]]; then
+    # Pad the name to the shared column, then give the description everything
+    # left on the line rather than a fixed slice of it.
+    #
+    # The `--` is not reprinted. zsh emits it because its lists are not
+    # column-aligned and something has to mark where the description starts;
+    # once the names share a column the alignment says that already, and the
+    # dashes are just noise in every row.
+    local _padded="${(r:_namew:)_keep_name[_k]}"
+    _omni_body="$_padded$_omni_gapstr$_keep_desc[_k]"
+  else
+    _omni_body="$_keep_name[_k]"
+  fi
+
+  # The ellipsis marks a clipped row as clipped, rather than looking like a
+  # command that genuinely ends mid-word. `m` counts display width, not bytes,
+  # so the glyph measures correctly.
+  if (( ${#_omni_body} > _omni_budget )); then
+    _omni_body="${(mr:_omni_budget-1:)_omni_body}…"
+  fi
+  _omni_body="${(mr:_omni_budget:)_omni_body}"
+
+  if [[ -n $_omni_dim ]] && (( _omni_tlen > 0 )) &&
+      [[ $_omni_body[1,_omni_tlen] == $_omni_typed ]]; then
+    _omni_line="$_omni_glyph$_omni_dim$_omni_body[1,_omni_tlen]$_omni_off$_omni_body[_omni_tlen+1,-1]"
+  else
+    _omni_line="$_omni_glyph$_omni_body"
+  fi
+
+  [[ -n ${_final_seen[$_omni_glyph$_omni_body]-} ]] &&
+      continue
+  _final_seen[$_omni_glyph$_omni_body]=1
+
+  _final+=( $kept[_k] )
+  _omnibar_row+=( "$_omni_line" )
+done
+
+order=( $_final )
 
 # `withheld_h` is tracked during the pass above, rather than derived from
 # totals, so duplicates do not masquerade as hidden rows.

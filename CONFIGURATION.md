@@ -124,6 +124,20 @@ format = "  $symbol   "
 The `[character]` block is what indents the line you actually type on; `format`
 alone only shifts the lines above it.
 
+### The description column
+Descriptions line up one column past the longest name actually on screen, and
+then run to the edge of the window.
+
+zsh pads every name to the width of the longest candidate it was handed,
+including ones filtered out before display, which can leave the description
+forty columns right of a name like `docker run` -- and that wasted width is
+what forced the descriptions themselves to be truncated. Laying the column out
+after the rows are chosen fixes both at once.
+
+zsh's `--` separator is not reprinted. It exists because zsh's own lists are
+not column-aligned, so something has to mark where the description starts; once
+the names share a column the alignment says that already.
+
 ### Panel background
 The list can be drawn on a slightly lighter background, so it reads as a panel
 rather than as text floating on the prompt. Off by default:
