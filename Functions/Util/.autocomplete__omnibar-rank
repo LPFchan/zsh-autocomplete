@@ -2,25 +2,35 @@
 # Scores every collected candidate on one scale and writes the display order
 # into `_omnibar_order`. Lower sorts earlier.
 #
-# The two sources are not directly comparable and must not be scored against
-# the same text. A completion is a single word, so it is matched against the
-# current word: typing `c` makes `checkout` a position-0 hit. A history entry
-# is a whole command line, so it is matched against everything typed so far:
-# typing `git c` makes `git checkout -b ...` a position-0 hit too. Scoring both
-# against the current word instead buries history, because `c` only turns up
-# several characters into the line -- which is what a first attempt here did.
+# The two sources are not comparable and must not be scored against the same
+# text. A completion is a single word, matched against the word under the
+# cursor: typing `c` makes `checkout` a position-0 hit. A history entry is a
+# whole command line, matched against everything typed so far: `git c` makes
+# `git checkout -b ...` a position-0 hit too. Scoring both against the current
+# word buries history, because a short word only turns up several characters
+# into a command line.
 #
-# Candidate length is deliberately not penalised. It reads as a reasonable
-# tie-breaker and then quietly ranks every history entry last, since command
-# lines are always longer than the single words completion produces.
+# Ranking happens in two passes, and the second pass is the point. Each source
+# is sorted by its own notion of quality first, and only then charged for its
+# place in that sorted list. Charging only one source -- as an earlier version
+# did, giving history a recency tax that completions never paid -- puts every
+# prefix-matching completion on the floor score of 0, so the best history entry
+# could at most tie and every later one lost outright. History never appeared.
 #
-# There is no correct cross-source ranking, only a preference, so the weights
-# are styles. Defaults are a starting point meant to be tuned by feel:
+# Sorting first also fixes the opposite mistake: charging completions for their
+# *collection* order, which the completion system emits roughly alphabetically,
+# so `checkout` ranked below `add` for the word `c`.
+#
+# Candidate length is deliberately not scored. It reads as a sensible
+# tie-breaker and then ranks every history entry last, command lines being
+# longer than single words by nature.
+#
+# There is no correct cross-source ranking, only a preference:
 #
 #   zstyle ':autocomplete:omnibar:' weight-position 100  # per char before match
 #   zstyle ':autocomplete:omnibar:' weight-rank      10  # per place within source
-#   zstyle ':autocomplete:omnibar:' bias-history      0  # < 0 favours history
-#   zstyle ':autocomplete:omnibar:' bias-completion   0  # < 0 favours completions
+#   zstyle ':autocomplete:omnibar:' bias-history      0  # lower favours history
+#   zstyle ':autocomplete:omnibar:' bias-completion   0
 
 setopt localoptions extendedglob
 
@@ -30,17 +40,17 @@ zstyle -s ":autocomplete:omnibar:" weight-rank     w_rank || w_rank=10
 zstyle -s ":autocomplete:omnibar:" bias-history    bias_h || bias_h=0
 zstyle -s ":autocomplete:omnibar:" bias-completion bias_c || bias_c=0
 
-# What a completion is matched against: the word under the cursor.
 local needle_c=$PREFIX$SUFFIX
 
-# What a history entry is matched against: the command line so far.
 local -a _omni_typed=( ${(@)words[1,CURRENT]} )
 _omni_typed=( ${_omni_typed:#} )
 local needle_h="${(j: :)_omni_typed}"
 
-local -i n=$#_omnibar_match i pos score hrank=0
+# --- pass 1: match position, per source ----------------------------------
+
+local -i n=$#_omnibar_match i pos
 local cand needle
-local -a keyed=()
+local -a hist_keyed=() comp_keyed=()
 
 for (( i = 1; i <= n; i++ )); do
   cand=$_omnibar_match[i]
@@ -51,8 +61,8 @@ for (( i = 1; i <= n; i++ )); do
     needle=$needle_c
   fi
 
-  # Where the needle turns up. A plain (i) subscript returns one past the end
-  # when absent, which would read as the best possible position, so clamp it.
+  # A bare (i) subscript returns one past the end when the needle is absent,
+  # which would read as the best possible position, so clamp it.
   if [[ -z $needle ]]; then
     pos=0
   else
@@ -61,38 +71,49 @@ for (( i = 1; i <= n; i++ )); do
     (( pos-- ))
   fi
 
+  # Sort key within the source: position first, then arrival order, which for
+  # history means recency.
   if [[ $_omnibar_src[i] == h ]]; then
-    # Collection order is recency order here, so it carries real information:
-    # it lets recent history compete at the top while older entries decay
-    # below the completions.
-    (( score = bias_h + w_pos * pos + w_rank * hrank++ ))
+    hist_keyed+=( "${(l:7::0:)pos}:${(l:6::0:)i}" )
   else
-    # Collection order is NOT quality order for completions -- the completion
-    # system emits them roughly alphabetically. Charging for position in that
-    # list penalised good matches for turning up late, which is how `checkout`
-    # ended up ranked below `add` when the typed word was `c`.
-    (( score = bias_c + w_pos * pos ))
+    comp_keyed+=( "${(l:7::0:)pos}:${(l:6::0:)i}" )
   fi
-
-  (( score < 0 )) && score=0
-
-  # Zero-pad so a plain lexical sort orders numerically; sorting integers with
-  # (n) on every keystroke is measurably slower. The index tie-breaks, which
-  # keeps ties in collection order -- history first, since it is collected
-  # before completions.
-  keyed+=( "${(l:10::0:)score}:${(l:6::0:)i}" )
 done
+
+# --- pass 2: charge each source for its place in its own sorted list ------
+
+local -a keyed=()
+local -i rank=0 score=0 idx=0
+local entry
+
+rank=0
+for entry in ${(@o)hist_keyed}; do
+  pos=${entry%%:*}
+  idx=${${entry#*:}##0##}
+  (( score = bias_h + w_pos * pos + w_rank * rank++ ))
+  (( score < 0 )) && score=0
+  keyed+=( "${(l:10::0:)score}:${(l:6::0:)idx}" )
+done
+
+rank=0
+for entry in ${(@o)comp_keyed}; do
+  pos=${entry%%:*}
+  idx=${${entry#*:}##0##}
+  (( score = bias_c + w_pos * pos + w_rank * rank++ ))
+  (( score < 0 )) && score=0
+  keyed+=( "${(l:10::0:)score}:${(l:6::0:)idx}" )
+done
+
+# --- emit order, de-duplicated -------------------------------------------
 
 # Emission passes -U, which switches off compadd's own duplicate rejection
 # (it has to: -U is also what stops compadd re-filtering our chosen matches).
-# The completion system does legitimately offer the same match more than once
-# under different tags, so de-duplicate here instead, keeping whichever copy
-# ranked best.
+# The completion system does legitimately offer the same match under more than
+# one tag, so de-duplicate here, keeping whichever copy ranked best.
 local -A seen=()
 local -a final=()
-local -i idx
-for idx in ${${(@o)keyed}#*:}; do
-  idx=${idx##0##}
+for entry in ${(@o)keyed}; do
+  idx=${${entry#*:}##0##}
   cand=$_omnibar_match[idx]
   [[ -n ${seen[$cand]-} ]] &&
       continue
