@@ -27,6 +27,47 @@ zstyle ':completion:*:' group-order \
 ```
 These will then be listed in the order you specify them, followed by all other completions.
 
+## Omnibar: one ranked list instead of two modes
+
+This fork replaces Autocomplete's two separate modes -- completions, and history
+search on <kbd>Ctrl</kbd><kbd>R</kbd> -- with a single list that blends both and
+ranks them together, the way a browser's address bar does. Recent matching
+history and matching completions appear in one flat list, best match first,
+whatever the source.
+
+Because the list always shows both, the mode toggle has nothing left to switch
+between and is disabled. `default-context` no longer has any effect.
+
+To go back to stock behaviour:
+```zsh
+zstyle ':autocomplete:omnibar' enabled no
+```
+
+### Tuning the ranking
+There is no correct way to rank a command you ran yesterday against a flag you
+have never used, only a preference. The weights are styles so you can adjust
+them; these are the defaults:
+```zsh
+zstyle ':autocomplete:omnibar:' weight-position 100  # cost per char before the match
+zstyle ':autocomplete:omnibar:' weight-rank      10  # cost per place down the history list
+zstyle ':autocomplete:omnibar:' bias-history      0  # negative favours history
+zstyle ':autocomplete:omnibar:' bias-completion   0  # negative favours completions
+```
+A match at the start of a candidate beats one in the middle, and recent history
+beats older history. To make history win ties outright, give it a negative bias:
+```zsh
+zstyle ':autocomplete:omnibar:' bias-history -50
+```
+
+### How much to consider and how much to show
+```zsh
+zstyle ':autocomplete:omnibar:' history-candidates 40  # history lines to rank
+zstyle ':autocomplete:omnibar:' list-lines         16  # rows actually displayed
+```
+`history-candidates` is how many history lines get ranked, not how many are
+shown. Raising it costs a little time on every keystroke; `list-lines` is free
+to change and defaults to whatever space the terminal has.
+
 ## Excluding completions
 There are two ways available to prevent certain completions from being shown.
 
