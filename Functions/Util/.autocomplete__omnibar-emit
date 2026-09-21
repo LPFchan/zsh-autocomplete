@@ -51,9 +51,76 @@ local -a order=( $_omnibar_order )
 # A share rather than the whole list because history-first ordering would
 # otherwise let a query with plenty of matching history fill the screen and
 # push the completions off it entirely.
+# Split the window between the two sources, reserving for completions only
+# what they can actually use.
+#
+# A fixed half each leaves the screen half empty whenever one side has little
+# to show: typing `claude` matches a couple of dozen history lines and almost
+# no completions, so history was capped at half the window while the other
+# half stayed blank and the list still offered to show more.
+#
+# So completions reserve min(what they have, half the window), and history
+# takes everything left. Either source can therefore fill the screen when the
+# other is empty, while neither can crowd the other out when both are busy.
+# Drop completion candidates that will not survive filtering, before any of
+# the sizing decisions are made.
+#
+# The pool holds everything the completion system offered, including the
+# candidates compadd will reject at emission. Counting those when reserving
+# space books rows for entries that never appear: typing `claude` reserved
+# about twenty rows for completions, all of which were then filtered out, so
+# the list stopped at eighteen rows with a blank half-screen beneath it and
+# still offered to show more.
+#
+# `compadd -O` answers this exactly -- it reports which candidates match,
+# using zsh's own matcher, without adding any of them.
+local -a _omni_cand=() _omni_matched=()
+local -i _oc=0
+for _oc in $_omnibar_order; do
+  [[ $_omnibar_src[_oc] == c ]] &&
+      _omni_cand+=( "$_omnibar_match[_oc]" )
+done
+
+if (( $#_omni_cand )); then
+  if [[ -n $_matcher ]]; then
+    builtin compadd -O _omni_matched -M "$_matcher" -- "${(@)_omni_cand}" 2> /dev/null
+  else
+    builtin compadd -O _omni_matched -- "${(@)_omni_cand}" 2> /dev/null
+  fi
+
+  local -A _omni_ok=()
+  local _omni_m=
+  for _omni_m in $_omni_matched; do
+    _omni_ok[$_omni_m]=1
+  done
+
+  local -a _omni_pruned=()
+  for _oc in $_omnibar_order; do
+    [[ $_omnibar_src[_oc] == c && -z ${_omni_ok[$_omnibar_match[_oc]]-} ]] &&
+        continue
+    _omni_pruned+=( $_oc )
+  done
+  _omnibar_order=( $_omni_pruned )
+
+  # Refresh the working copy. It was taken from the pool before pruning, so
+  # without this the row-building pass still walks the rejected candidates:
+  # they get emitted, compadd drops them, and the list ends up shorter than the
+  # window with no indication why. Rows were being built for 37 candidates and
+  # 25 drawn.
+  order=( $_omnibar_order )
+fi
+
+local -i avail_h=0 avail_c=0
+for _oc in $_omnibar_order; do
+  [[ $_omnibar_src[_oc] == h ]] && (( avail_h++ )) || (( avail_c++ ))
+done
+
 local -i hist_max
 if ! zstyle -s ":autocomplete:omnibar:" history-lines hist_max; then
-  (( hist_max = shown / 2 ))
+  local -i reserve_c=$(( shown - shown / 2 ))
+  (( avail_c < reserve_c )) &&
+      (( reserve_c = avail_c ))
+  (( hist_max = shown - reserve_c ))
   (( hist_max < 1 )) && hist_max=1
 fi
 
@@ -75,23 +142,21 @@ local -i more=0
 # expand on that side -- "N more completions" simply means more than fit on
 # screen, which no setting here can change. Expanding therefore reallocates
 # the screen rather than enlarging it.
+# Only the history share grows on expansion. The total is bounded by the
+# window, not by choice: the plugin disables zsh's list pager
+# (.autocomplete__config deletes `list-prompt` and unsets LISTPROMPT), so a
+# list taller than the screen falls back to zsh asking "do you wish to see all
+# 49 possibilities?" rather than scrolling. Expanding therefore takes rows from
+# the completions instead of lengthening the list.
 (( hist_max += hist_max * more ))
-(( hist_max > shown - 2 )) &&
-    (( hist_max = shown - 2 ))
+(( hist_max > shown )) &&
+    (( hist_max = shown ))
 
-local -a capped=()
-local -i seen_h=0 _oi
-for _oi in $order; do
-  if [[ $_omnibar_src[_oi] == h ]]; then
-    (( seen_h++ >= hist_max )) &&
-        continue
-  fi
-  capped+=( $_oi )
-done
-order=( $capped )
-
-(( $#order > shown )) &&
-    order=( $order[1,shown] )
+# NOTE: the capping and truncation of `order` happens in the row-building pass
+# further down, not here. An earlier version capped in both places; this one
+# ran first, so by the time the second pass looked, the list was already
+# trimmed, its own cap never triggered, and the count of withheld rows came out
+# as zero -- which silently disabled the "show more" row entirely.
 
 # Nerd Font icons. A blended list mixes two row shapes -- a bare command line
 # and a padded `name -- description` -- and with nothing to tell them apart the
@@ -196,10 +261,21 @@ local -A row_seen=()
 local -i seen_h=0 _oi=0
 local _omni_glyph= _omni_tag= _omni_line= _omni_body=
 
+# Rows held back by the cap, as opposed to rows dropped as duplicates. Only
+# the former are worth offering: counting de-duplicated rows as withheld
+# produced a "show 1 more from history" that, when selected, revealed nothing,
+# because the row it was counting had been deliberately collapsed as identical
+# to one already on screen.
+local -i withheld_h=0 _opos=0 _oj=0
+
 for _oi in $order; do
+  (( _opos++ ))
+
   if [[ $_omnibar_src[_oi] == h ]]; then
-    (( seen_h >= hist_max )) &&
-        continue
+    if (( seen_h >= hist_max )); then
+      (( withheld_h++ ))
+      continue
+    fi
   fi
 
   # History entries are already whole command lines; completions are a single
@@ -254,23 +330,22 @@ for _oi in $order; do
   kept+=( $_oi )
   _omnibar_row+=( "$_omni_line" )
 
-  (( $#kept >= shown )) &&
-      break
+  if (( $#kept >= shown )); then
+    # Everything past this point is held back by the window, so count the
+    # history among it before stopping.
+    for (( _oj = _opos + 1; _oj <= $#order; _oj++ )); do
+      [[ $_omnibar_src[$order[_oj]] == h ]] &&
+          (( withheld_h++ ))
+    done
+    break
+  fi
 done
 
 order=( $kept )
 
-# How much was held back, so the hint can say so. Counted from the ranked set
-# rather than the kept set, and per source, since the two are capped
-# separately.
-local -i total_h=0 total_c=0 kept_h=0 kept_c=0
-for _oi in $_omnibar_order; do
-  [[ $_omnibar_src[_oi] == h ]] && (( total_h++ )) || (( total_c++ ))
-done
-for _oi in $kept; do
-  [[ $_omnibar_src[_oi] == h ]] && (( kept_h++ )) || (( kept_c++ ))
-done
-local -i more_h=$(( total_h - kept_h )) more_c=$(( total_c - kept_c ))
+# `withheld_h` is tracked during the pass above, rather than derived from
+# totals, so duplicates do not masquerade as hidden rows.
+local -i more_h=$withheld_h
 
 # Walk the ranked order and mark where the option set changes; each span
 # between boundaries becomes one compadd.
@@ -340,7 +415,19 @@ done
 # One row rather than one per source. Both sections widen together, so two rows
 # would be two ways to do the same thing -- and giving them distinct match
 # strings meant padding one with whitespace the hook then failed to strip.
-if (( more_h > 0 && hist_max < shown - 2 )) && [[ -n $_OMNIBAR_MORE ]]; then
+# What selecting the row would actually reveal. The window is the hard limit
+# and history already takes every row completions do not need, so expanding can
+# only reclaim the completions' rows -- at most `shown - hist_max` of them.
+#
+# The label has to say that number rather than the number withheld, or it
+# promises what it cannot deliver: with a short window and 17 history matches
+# held back but only 2 completion rows to reclaim, "show 17 more" would reveal
+# two.
+local -i gain=$(( shown - hist_max ))
+(( gain > more_h )) &&
+    (( gain = more_h ))
+
+if (( gain > 0 )) && [[ -n $_OMNIBAR_MORE ]]; then
   local -a _omni_more_m=( "$PREFIX$SUFFIX$_OMNIBAR_MORE" )
   local _omni_more_glyph=
   (( use_icons )) &&
@@ -349,8 +436,8 @@ if (( more_h > 0 && hist_max < shown - 2 )) && [[ -n $_OMNIBAR_MORE ]]; then
   # Only history is offered, because only history is actionable; see the note
   # on the total above. Mentioning the withheld completions would advertise
   # something selecting the row cannot deliver.
-  local _omni_more_text="show $more_h more from history"
-  (( more_h == 1 )) &&
+  local _omni_more_text="show $gain more from history"
+  (( gain == 1 )) &&
       _omni_more_text="show 1 more from history"
 
   # Build the row first: parameter-expansion flags apply to a single named

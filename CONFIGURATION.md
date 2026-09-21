@@ -82,8 +82,9 @@ means "more than fit on screen", which no setting here can change. Use a taller
 window, or raise the history cap and read them there.
 
 The list fills the window: as many rows as fit between the prompt and the last
-line, with history taking half and completions taking every row history leaves
-unused. On a tall terminal that is most of the screen, and the "show more" row
+line. Completions reserve only what they can actually use -- at most half the
+window -- and history takes everything left, so either source can fill the
+screen when the other has little to show. On a tall terminal that is most of the screen, and the "show more" row
 only appears when something genuinely did not fit.
 
 Both shares can be pinned:
