@@ -22,6 +22,15 @@ ${0}:precmd() {
     elif [[ ~autocomplete/zsh-autocomplete.plugin.zsh -nt $zasync_dir/.git/FETCH_HEAD ]]; then
       command git -C "$zasync_dir" pull --ff-only
     fi
+    # Drop the stub left behind by the failed `autoload -Uz +X zasync` above.
+    # That probe creates a pathless autoload stub even when it cannot find
+    # `zasync` on $fpath, and a second `autoload` does not re-point an existing
+    # function -- so the absolute path below would be ignored, `zasync` would
+    # resolve to an unloadable stub, and calling it would silently return 0
+    # without loading anything. No async job ever starts, no callback widget is
+    # registered, and the completion list simply never appears, with nothing
+    # written to the log.
+    builtin unfunction zasync 2> /dev/null
     builtin autoload -Uz $zasync_dir/zasync
   fi
 
