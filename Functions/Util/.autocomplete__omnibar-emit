@@ -93,7 +93,13 @@ if ! zstyle -a ":autocomplete:omnibar:" hide-until-typed _omni_hide; then
   )
 fi
 
-if (( $#_omni_hide )) && [[ -z $PREFIX$SUFFIX ]]; then
+# `$IPREFIX$PREFIX$SUFFIX$ISUFFIX`, not `$PREFIX$SUFFIX`. At a directory
+# boundary -- `ls .agents/` -- zsh moves the path into IPREFIX and leaves
+# PREFIX empty, so testing PREFIX alone reads a fully-typed path as "nothing
+# typed yet" and hides every file in it. Completion inside any directory
+# stopped working. This is the same expression upstream's
+# `_autocomplete__unambiguous` uses for the current word.
+if (( $#_omni_hide )) && [[ -z $IPREFIX$PREFIX$SUFFIX$ISUFFIX ]]; then
   local -a _omni_narrow=()
   local -i _oh=0
   for _oh in $_omnibar_order; do
@@ -101,11 +107,15 @@ if (( $#_omni_hide )) && [[ -z $PREFIX$SUFFIX ]]; then
         continue
     _omni_narrow+=( $_oh )
   done
-  # Only if something survives. A context whose only candidates are files --
-  # `cat <tab>`, say -- would otherwise show an empty list, which is worse
-  # than showing the directory.
-  (( $#_omni_narrow )) &&
-      _omnibar_order=( $_omni_narrow )
+  # Applied unconditionally, including when it empties the list.
+  #
+  # There was a carve-out here for contexts whose only candidates are files, on
+  # the grounds that an empty list is worse than a directory listing. It is
+  # not, and it defeated the feature: a command with no completion spec --
+  # `docker-proxy <tab>` -- has files as its only candidates, so the carve-out
+  # fired every time and the whole directory came back. That is the case this
+  # setting exists to suppress. Nothing until a letter narrows it.
+  _omnibar_order=( $_omni_narrow )
 fi
 
 local -a _omni_cand=() _omni_matched=()
