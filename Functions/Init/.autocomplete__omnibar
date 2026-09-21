@@ -96,6 +96,12 @@ ${0}:precmd() {
         builtin zstyle -d "${(Q)pattern[2]}" default-context 2> /dev/null
   done
 
+  # Ask the terminal for its background and derive the panel tint. Must happen
+  # here rather than during completion: the query needs a real tty, and the
+  # completion pass runs in a forked pty child that has none. The child
+  # inherits the answer.
+  .autocomplete__omnibar-tint
+
   # Re-assert both for the same reason: a .zshrc that sets its own `completer`
   # style would otherwise take precedence, and compinit may have run in between
   # and replaced the function table.

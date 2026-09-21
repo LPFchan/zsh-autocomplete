@@ -1,0 +1,98 @@
+#!/bin/zsh
+# Work out the panel background once per shell, by asking the terminal what its
+# own background is and blending white into it.
+#
+# There is no opacity in a terminal: a cell has one solid background colour and
+# no alpha channel. "15% white" therefore has to be computed, not composited,
+# and computing it needs the actual background -- which is a property of the
+# terminal emulator, not of the shell, and differs per machine and per theme.
+#
+# OSC 11 is the only way to ask. The terminal replies on the tty with
+# `rgb:RRRR/GGGG/BBBB`. It needs a real tty, so this runs from precmd in the
+# main shell; the completion pass happens in a forked pty child, which inherits
+# the answer but could not have asked for it.
+#
+# Everything here degrades to "no panel" rather than to a guessed colour. A
+# wrong guess is worse than nothing: it paints a block in almost-but-not-quite
+# the background colour, which reads as a rendering fault.
+
+local _omni_want=
+zstyle -s ":autocomplete:omnibar:" background _omni_want ||
+    _omni_want=auto
+
+if [[ $_omni_want == (off|no|none) ]]; then
+  typeset -g _omnibar_bg=
+  return 0
+fi
+
+# An explicit colour skips the query entirely.
+if [[ $_omni_want == '#'[0-9a-fA-F](#c6) ]]; then
+  typeset -g _omnibar_bg="$_omni_want"
+  return 0
+fi
+
+# Already answered for this shell.
+[[ -v _omnibar_bg ]] &&
+    return 0
+
+typeset -g _omnibar_bg=
+
+[[ -t 0 && -e /dev/tty ]] ||
+    return 0
+
+local -i pct=15
+zstyle -s ":autocomplete:omnibar:" background-mix pct ||
+    pct=15
+(( pct < 0 )) && pct=0
+(( pct > 100 )) && pct=100
+
+local _omni_saved= _omni_reply= _omni_ch=
+_omni_saved=$( stty -g < /dev/tty 2> /dev/null ) ||
+    return 0
+
+{
+  stty raw -echo min 0 time 0 < /dev/tty 2> /dev/null
+
+  # Wrapped for tmux: without the passthrough envelope tmux answers on its own
+  # behalf rather than forwarding to the real terminal.
+  if [[ -n $TMUX ]]; then
+    print -n '\ePtmux;\e\e]11;?\e\e\\\e\\' > /dev/tty
+  else
+    print -n '\e]11;?\e\\' > /dev/tty
+  fi
+
+  # Bounded wait. A terminal that does not implement the query simply never
+  # answers, and the shell must not stall at every prompt because of it.
+  local -i _omni_i=0
+  for (( _omni_i = 1; _omni_i <= 60; _omni_i++ )); do
+    if read -t 0.01 -k 1 _omni_ch < /dev/tty 2> /dev/null; then
+      _omni_reply+=$_omni_ch
+      [[ $_omni_reply == *($'\a'|'\\') ]] &&
+          break
+    fi
+  done
+} always {
+  stty "$_omni_saved" < /dev/tty 2> /dev/null
+}
+
+# rgb:RRRR/GGGG/BBBB -- 16 bits per channel, though some terminals send 8.
+local _omni_hex="${_omni_reply#*rgb:}"
+[[ $_omni_hex == (#b)([0-9a-fA-F]##)/([0-9a-fA-F]##)/([0-9a-fA-F]##)* ]] ||
+    return 0
+
+# `local -i 10`: assigning `16#..` to an integer otherwise sets base 16 as
+# the variable's output base, and it expands as the literal `16#3D`.
+local -i 10 r g b
+(( r = 16#${match[1][1,2]} ))
+(( g = 16#${match[2][1,2]} ))
+(( b = 16#${match[3][1,2]} ))
+
+# Blend towards white by `pct`. Deriving the tint from the reported background
+# rather than assuming one is the whole point: the same setting then reads the
+# same on a dark theme, a light theme and a solarised one.
+(( r = r + (255 - r) * pct / 100 ))
+(( g = g + (255 - g) * pct / 100 ))
+(( b = b + (255 - b) * pct / 100 ))
+
+typeset -g _omnibar_bg="$(printf '#%02x%02x%02x' $r $g $b)"
+return 0

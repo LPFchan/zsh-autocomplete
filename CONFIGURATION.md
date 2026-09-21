@@ -124,6 +124,53 @@ format = "  $symbol   "
 The `[character]` block is what indents the line you actually type on; `format`
 alone only shifts the lines above it.
 
+### Panel background
+The list can be drawn on a slightly lighter background, so it reads as a panel
+rather than as text floating on the prompt:
+```zsh
+zstyle ':autocomplete:omnibar:' background auto      # default
+zstyle ':autocomplete:omnibar:' background-mix 15    # per cent white mixed in
+zstyle ':autocomplete:omnibar:' background '#3d4148' # or a fixed colour
+zstyle ':autocomplete:omnibar:' background off
+```
+
+`auto` asks the terminal for its own background colour (OSC 11) and mixes white
+into it. That is what makes one setting work on a dark theme, a light theme and
+a solarised one, instead of a hard-coded colour that only suits the terminal it
+was chosen on. A terminal that does not answer the query gets no panel at all,
+rather than a guessed colour -- a near-miss reads as a rendering fault, which
+is worse than nothing.
+
+It needs `set -g allow-passthrough on` under tmux, since otherwise tmux answers
+the query on its own behalf instead of forwarding it.
+
+#### Why the band stops short of the edge
+With `dim-typed` on, the band ends about ten columns early. zsh measures a
+completion row's display string in bytes, escapes included, when working out
+how many screen lines it needs, so the dim sequences count as visible width and
+the row has to be padded that much shorter -- otherwise every row is counted as
+two lines and the list collapses into zsh's *"do you wish to see all N
+possibilities?"* prompt.
+
+The background itself does not cost anything, because it is handed to zsh via
+`_comp_colors` rather than embedded in the row, and zsh knows the real width
+when it colours a list itself. Measured on a 90-column window: the band reaches
+column 80 with dimming on, and column 89 with it off. So:
+```zsh
+zstyle ':autocomplete:omnibar:' dim-typed no   # full-width band, no dimmed prefix
+```
+is the choice between a full-width panel and a dimmed typed prefix. Both are
+not possible; the same `(#b)` colour spec that would let zsh do the dimming has
+no effect on these matches.
+
+#### What cannot be done
+The band covers the completion list only. It cannot be extended around the line
+you type on: a prompt is drawn by your prompt program and the text you type by
+zle, and nothing pads the space to the right of the cursor, so the band would
+stop dead at the cursor rather than reaching the edge. A full-screen input panel
+of the kind a TUI draws needs to own the screen, which a completion list does
+not.
+
 ### Icons
 Each row is prefixed with a Nerd Font glyph showing where it came from -- a
 clock for history, a terminal for commands, a folder for directories, and so

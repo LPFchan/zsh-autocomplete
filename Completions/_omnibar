@@ -91,7 +91,23 @@ _omnibar() {
     return ret
   fi
 
-  .autocomplete__omnibar-rank
+  # Hand the panel background to zsh rather than embedding the escape in each
+  # row. zsh knows the true display width when it colours a list itself, so
+  # this costs nothing from the row budget -- an embedded sequence is counted
+  # as visible text and shortens the band by its own length.
+  #
+  # Only a blanket `=*=` spec works here. A `(#b)` backreference spec, to dim
+  # just the typed prefix through the same channel, was tried and had no
+  # effect, so that part stays an embedded escape.
+  if [[ -n ${_omnibar_bg-} && $_omnibar_bg == '#'[0-9a-fA-F](#c6) ]]; then
+    local -i 10 _cr _cg _cb
+    (( _cr = 16#${_omnibar_bg[2,3]} ))
+    (( _cg = 16#${_omnibar_bg[4,5]} ))
+    (( _cb = 16#${_omnibar_bg[6,7]} ))
+    _comp_colors+=( "=*=48;2;${_cr};${_cg};${_cb}" )
+  fi
+
+.autocomplete__omnibar-rank
   .autocomplete__omnibar-emit
 
   (( compstate[nmatches] > 0 )) &&

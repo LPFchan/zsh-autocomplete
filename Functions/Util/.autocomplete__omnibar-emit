@@ -265,6 +265,9 @@ local -i _omni_tlen=$#_omni_typed
 # weight: you see at a glance which characters are yours and which are the
 # suggestion. Escapes are spliced in *after* truncation, because zsh counts
 # them toward the display width when it pads the row.
+# The panel background is applied by zsh via `_comp_colors` (see _omnibar),
+# not embedded here: an embedded sequence counts against the row's width and
+# shortens the band by its own length.
 local _omni_dim= _omni_off=
 local -i _omni_esclen=0
 if zstyle -T ":autocomplete:omnibar:" dim-typed; then
