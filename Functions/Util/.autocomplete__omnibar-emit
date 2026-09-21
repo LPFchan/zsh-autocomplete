@@ -19,9 +19,23 @@ zstyle -s ":autocomplete:omnibar:" group-name group ||
 
 # Only ever show a screenful. Chrome shows a handful; emitting 1500 rows one
 # per line would be unreadable and slow to draw.
-local -i shown
-zstyle -s ":autocomplete:omnibar:" list-lines shown ||
-    shown=${_autocomplete__max_lines:-16}
+# Fill the window. Autocomplete's own budget is
+# `min(16, LINES - BUFFERLINES - 1)`, so on anything taller than a small
+# terminal the 16 binds and half the screen goes unused. Here the window is
+# the limit, and 16 is only a fallback for when LINES is not available.
+#
+# One row is held back for the "show more" row so that adding it cannot push
+# the list past the last line -- overflowing gets zsh's "do you wish to see all
+# N possibilities?" fallback, since Autocomplete disables the list pager.
+local -i shown avail
+(( avail = LINES - BUFFERLINES - 1 ))
+if zstyle -s ":autocomplete:omnibar:" list-lines shown; then
+  :
+elif (( avail > 0 )); then
+  (( shown = avail - 1 ))
+else
+  shown=16
+fi
 (( shown > 0 )) || shown=16
 
 local -a order=( $_omnibar_order )
@@ -29,9 +43,19 @@ local -a order=( $_omnibar_order )
 # Cap the history block. Ranking will happily return twenty near-identical
 # `git clone ...` lines, which crowds out the completions and reads as noise;
 # a handful of the most recent is all that is useful.
+# History takes a share of the window rather than a fixed count, so a taller
+# terminal shows more of both sources instead of more completions only.
+# Completions then take every row history leaves, so nothing is wasted when
+# there is little matching history.
+#
+# A share rather than the whole list because history-first ordering would
+# otherwise let a query with plenty of matching history fill the screen and
+# push the completions off it entirely.
 local -i hist_max
-zstyle -s ":autocomplete:omnibar:" history-lines hist_max ||
-    hist_max=4
+if ! zstyle -s ":autocomplete:omnibar:" history-lines hist_max; then
+  (( hist_max = shown / 2 ))
+  (( hist_max < 1 )) && hist_max=1
+fi
 
 # How many times "show more" has been pressed for *this* input. A stale count
 # from a previous command line is ignored rather than reset, because this runs

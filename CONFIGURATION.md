@@ -81,9 +81,18 @@ take every row history does not use, so a count of withheld completions just
 means "more than fit on screen", which no setting here can change. Use a taller
 window, or raise the history cap and read them there.
 
+The list fills the window: as many rows as fit between the prompt and the last
+line, with history taking half and completions taking every row history leaves
+unused. On a tall terminal that is most of the screen, and the "show more" row
+only appears when something genuinely did not fit.
+
+Both shares can be pinned:
 ```zsh
-zstyle ':autocomplete:omnibar:' history-lines 4   # starting size of the block
+zstyle ':autocomplete:omnibar:' history-lines 4   # fixed history rows
+zstyle ':autocomplete:omnibar:' list-lines    16  # fixed total rows
 ```
+Autocomplete's own budget is `min(16, LINES - BUFFERLINES - 1)`, so setting
+`list-lines` here is what lets the list grow past 16 rows on a tall window.
 
 ### Icons
 Each row is prefixed with a Nerd Font glyph showing where it came from -- a
@@ -117,8 +126,9 @@ To interleave anyway:
 zstyle ':autocomplete:omnibar:' bias-history 0
 ```
 
-The history block is capped, because ranking will happily return twenty
-near-identical `git clone ...` lines and crowd out the completions:
+The history block takes a share of the window rather than all of it, because
+history sorts first and a query with plenty of matching history would otherwise
+fill the screen and push the completions off it:
 ```zsh
 zstyle ':autocomplete:omnibar:' history-lines 4   # history rows shown
 ```
