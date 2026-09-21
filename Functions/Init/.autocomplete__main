@@ -9,7 +9,7 @@ zmathfunc
 
 typeset -ga _autocomplete__ctxt_opts=( completealiases completeinword )
 
-typeset -ga _autocomplete__mods=( compinit config widgets key-bindings recent-dirs async )
+typeset -ga _autocomplete__mods=( compinit config widgets key-bindings recent-dirs async omnibar )
 
 local -P logdir=${XDG_STATE_HOME:-$HOME/.local/state}/zsh-autocomplete/log
 zf_mkdir -p -- $logdir

@@ -1,0 +1,95 @@
+#!/bin/zsh
+# Stands in for `compadd` while the omnibar completer runs. Records what would
+# have been added instead of adding it, so it can be ranked and emitted later.
+#
+# Option parsing goes through `zparseopts` rather than a hand-rolled loop.
+# Real calls bundle short options, and a bundle can end in one that takes an
+# argument -- `_autocomplete__history_lines` ends its call with
+# `-QU -ld displays -J history-lines -a matches`, where `-ld` is `-l` plus a
+# `-d` whose argument is the next word. Walking characters by hand gets that
+# wrong and spills option words into the match list.
+#
+# The match words themselves are never iterated here. On a large directory
+# there are thousands, and touching each one in shell code would cost more than
+# the rest of the feature put together.
+
+setopt localoptions extendedglob
+
+local -a _omni_orig=( "$@" )
+local -A _omni_o=()
+
+zparseopts -D -A _omni_o -- \
+    P: S: p: s: i: I: d: J: V: X: x: r: R: W: F: M: O: A: D: E: \
+    o:: a k l q f Q U e n C 1 2 12 2> /dev/null
+
+# `-O`, `-A` and `-D` fill a caller-supplied array instead of (or as well as)
+# adding matches. `_describe` uses them to work out which of its candidates
+# apply before making its real call, so they have to behave exactly as normal.
+if [[ -v _omni_o[-O] || -v _omni_o[-A] || -v _omni_o[-D] ]]; then
+  builtin compadd "${(@)_omni_orig}"
+  return
+fi
+
+# Drop a leading option terminator if zparseopts left one behind.
+[[ $1 == (--|-) ]] &&
+    shift
+
+local -a _omni_words=( "$@" )
+
+# `-a` means the words are array names; `-k`, associative array names. Those
+# arrays are nearly always locals inside the completion function that called
+# compadd, so they must be read now -- by emit time that scope is gone and the
+# name resolves to nothing.
+if [[ -v _omni_o[-a] ]]; then
+  local -a _omni_exp=()
+  local _omni_nm
+  for _omni_nm in $_omni_words; do
+    _omni_exp+=( "${(@P)_omni_nm}" )
+  done
+  _omni_words=( "${(@)_omni_exp}" )
+elif [[ -v _omni_o[-k] ]]; then
+  local -a _omni_exp=()
+  local _omni_nm
+  for _omni_nm in $_omni_words; do
+    _omni_exp+=( "${(@Pk)_omni_nm}" )
+  done
+  _omni_words=( "${(@)_omni_exp}" )
+fi
+
+(( $#_omni_words )) ||
+    return 0
+
+# Same reasoning for the display-string array.
+local -a _omni_disp_vals=()
+[[ -n ${_omni_o[-d]-} ]] &&
+    _omni_disp_vals=( "${(@P)${_omni_o[-d]}}" )
+
+# Rebuild the option set, keeping only what applies per match on re-emission.
+# Grouping and heading options (-J -V -X -x) are dropped because the omnibar is
+# one flat group, and -d/-l are dropped because emit supplies its own.
+local -a _omni_keep=()
+local _omni_k
+for _omni_k in -P -S -p -s -i -I -r -R -W -M -E -o; do
+  [[ -v _omni_o[$_omni_k] ]] &&
+      _omni_keep+=( $_omni_k "${_omni_o[$_omni_k]}" )
+done
+for _omni_k in -q -f -Q -U -e -n -C -1 -2 -12; do
+  [[ -v _omni_o[$_omni_k] ]] &&
+      _omni_keep+=( $_omni_k )
+done
+
+(( ++_omnibar_noptsets ))
+set -A _omnibar_opts_$_omnibar_noptsets "${(@)_omni_keep}"
+
+local -i _omni_n=$#_omni_words _omni_i
+_omnibar_match+=( "${(@)_omni_words}" )
+for (( _omni_i = 1; _omni_i <= _omni_n; _omni_i++ )); do
+  _omnibar_disp+=( "${_omni_disp_vals[_omni_i]:-$_omni_words[_omni_i]}" )
+  _omnibar_optset+=( $_omnibar_noptsets )
+  _omnibar_src+=( c )
+done
+
+# Report success: callers read this to decide whether they produced anything,
+# and an apparently-empty pass makes _main_complete retry every entry of
+# matcher-list, regenerating candidates each time.
+return 0

@@ -1,0 +1,25 @@
+#!/bin/zsh
+# Omnibar module. Loaded last by `.autocomplete__main`, so it can override what
+# the other modules set up.
+#
+# Turning this off restores stock Autocomplete behaviour:
+#
+#   zstyle ':autocomplete:omnibar' enabled no
+#
+# The module system in `.autocomplete__main` gates every module on that style,
+# so no extra plumbing is needed for the escape hatch.
+
+# One completer replaces Autocomplete's chain. `_omnibar` drives `_complete`
+# itself so it can intercept everything on the way out, and `_ignored` stays
+# behind it as the usual fallback.
+builtin zstyle ':completion:*' completer _omnibar _ignored
+
+# The omnibar is one ranked list, so the history/completion toggle has nothing
+# left to switch between. Neutralise it rather than leaving a key that puts the
+# list into a mode the ranking does not apply to.
+#
+# `default-context` and the fork's old `persist-context` style are both
+# meaningless now and are simply ignored.
+.autocomplete:async:toggle-context() {
+  return 0
+}

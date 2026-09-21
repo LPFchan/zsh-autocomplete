@@ -11,8 +11,6 @@ builtin autoload -RUz \
     is-at-least
 
 typeset -g ZSH_AUTOSUGGEST_USE_ASYNC=yes
-typeset -g _autocomplete__persisted_context=
-typeset -gi _autocomplete__context_persisted=0
 
 ${0}:precmd() {
   if [[ -z $functions[zasync] || $functions[zasync] == builtin\ autoload* ]] &&
@@ -61,10 +59,6 @@ ${0}:precmd() {
   else
     typeset -g curcontext=${WIDGET}:::
   fi
-  builtin zstyle -t ':autocomplete:' persist-context && {
-    typeset -g _autocomplete__persisted_context=$curcontext
-    typeset -gi _autocomplete__context_persisted=1
-  }
   zle .autocomplete:async:complete -w
 }
 
@@ -73,10 +67,6 @@ ${0}:precmd() {
 
   typeset -g curcontext=
   builtin zstyle -s :autocomplete: default-context curcontext
-
-  if (( _autocomplete__context_persisted )); then
-    typeset -g curcontext=$_autocomplete__persisted_context
-  fi
 
   .autocomplete:async:complete
   return 0
@@ -95,9 +85,6 @@ ${0}:precmd() {
     unset _autocomplete__inserted
     typeset -g curcontext=
     builtin zstyle -s :autocomplete: default-context curcontext
-    if (( _autocomplete__context_persisted )); then
-      typeset -g curcontext=$_autocomplete__persisted_context
-    fi
   fi
   .autocomplete__async-save-state
 

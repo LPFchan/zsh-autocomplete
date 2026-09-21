@@ -1,0 +1,101 @@
+#autoload
+
+# Single completer that produces one flat, ranked list blending shell
+# completions with history lines -- the "omnibar" model, as opposed to
+# Autocomplete's stock behaviour of switching between separate modes.
+#
+# How it works, and why it works this way:
+#
+#   1. Shadow `compadd` with a collector and run the normal completion
+#      machinery. Nothing is emitted yet; every call is recorded instead.
+#   2. Run the history source the same way, reusing Autocomplete's own
+#      `_autocomplete__history_lines` so we inherit its matching and its
+#      recency ordering rather than reimplementing them.
+#   3. Score everything on one scale and sort.
+#   4. Emit in rank order as a series of `compadd -V` calls sharing one group
+#      name. Several such calls merge into a single unsorted group, so the
+#      rendered list is flat and in exactly the order we chose.
+#
+# Two things are load-bearing and easy to break:
+#
+#   * The collector must return 0, and this completer must finish with real
+#     matches on the list. Completion functions read compadd's status to decide
+#     whether they produced anything, and an apparently-empty pass makes
+#     `_main_complete` work through every entry of `matcher-list`, regenerating
+#     candidates each time -- measured ~6x slower on a large directory.
+#   * `compadd -a`/`-k`/`-d` take array *names*, and those arrays are usually
+#     locals inside the completion function that called compadd. By the time we
+#     emit, that scope is gone and the name resolves to nothing, so the
+#     collector dereferences them immediately and stores values.
+
+_omnibar() {
+  setopt localoptions extendedglob
+
+  typeset -ga _omnibar_match=() _omnibar_disp=() _omnibar_optset=() _omnibar_src=()
+  typeset -ga _omnibar_order=()
+  typeset -gi _omnibar_noptsets=0
+
+  local -a saved_colors=( $_comp_colors )
+  local saved_tags=$_comp_tags
+
+  local -a chain=()
+  zstyle -a ":autocomplete:omnibar:" completers chain ||
+      chain=( _expand _complete _prefix _correct )
+
+  # Autocomplete installs its own `compadd` shadow for line budgeting. Put it
+  # back afterwards rather than clobbering it; we do our own budgeting on emit.
+  local had_shadow=0 saved_shadow=
+  if [[ -v functions[compadd] ]]; then
+    had_shadow=1
+    saved_shadow=$functions[compadd]
+  fi
+
+  local -i ret=1
+  {
+    compadd() { .autocomplete__omnibar-collect "$@" }
+
+    .autocomplete__omnibar-history
+
+    # Run Autocomplete's completer chain rather than just `_complete`, or
+    # expansion and typo correction quietly disappear. Same contract as
+    # `_main_complete` -- try each in turn and stop once one yields -- except
+    # that "yielded" is measured by what the collector actually gathered, not
+    # by the completer's exit status.
+    #
+    # The status cannot be trusted while emission is deferred: completion
+    # functions decide success partly from `compstate[nmatches]`, which stays
+    # at 0 until emit runs. So `_complete` reports failure even when it
+    # produced thousands of candidates, and the chain runs on to `_prefix` and
+    # `_correct`, each regenerating the lot. That measured 227ms against 89ms
+    # on a large directory, for three copies of the same candidates.
+    local -i before_chain=$#_omnibar_match
+    local _omni_c
+    for _omni_c in $chain; do
+      $_omni_c
+      if (( $#_omnibar_match > before_chain )); then
+        ret=0
+        break
+      fi
+    done
+  } always {
+    unfunction compadd 2> /dev/null
+    (( had_shadow )) &&
+        functions[compadd]=$saved_shadow
+  }
+
+  _comp_tags=$saved_tags
+
+  if (( ! $#_omnibar_match )); then
+    _comp_colors=( $saved_colors )
+    return ret
+  fi
+
+  .autocomplete__omnibar-rank
+  .autocomplete__omnibar-emit
+
+  (( compstate[nmatches] > 0 )) &&
+      return 0
+  return ret
+}
+
+_omnibar "$@"

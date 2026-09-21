@@ -1,0 +1,68 @@
+#!/bin/zsh
+# Feeds history lines into the omnibar's candidate pool.
+#
+# This matches history directly with `fc` rather than reusing Autocomplete's
+# `_autocomplete__history_lines`. Reuse was tried first and abandoned: that
+# function ends with `builtin compadd`, deliberately bypassing the shadowing
+# the omnibar relies on, so it had to be rewritten in memory to intercept it --
+# and even then it yielded a single candidate instead of a screenful, for
+# reasons buried in its own list-sizing and de-duplication logic. Fifteen
+# readable lines here beat a fragile rewrite of a hundred and fifty.
+#
+# What is given up: upstream's multi-token fuzzy matching against history.
+# What is kept: recency order. Note the absence of `-r`: the range `-1 1` already
+# runs newest-to-oldest, so adding -r (as upstream does, before applying its own
+# sort) flips it back to chronological and buries recent commands.
+
+local -i budget
+zstyle -s ":autocomplete:omnibar:" history-candidates budget ||
+    budget=40
+
+(( budget > 0 )) ||
+    return 0
+
+# Match against everything typed up to and including the current word, so
+# `git co` looks for history lines containing "git" then "co" in that order.
+local -a typed=( ${(@)words[1,CURRENT]} )
+typed=( ${typed:#} )
+
+local pattern
+if (( $#typed )); then
+  pattern="*${(j:*:)typed}*"
+else
+  pattern='*'
+fi
+
+# `fc` is markedly faster than walking $history. Range -1 1 is newest-first.
+local raw
+raw="$( fc -lm -- "$pattern" -1 1 2> /dev/null )"
+
+[[ -n $raw ]] ||
+    return 0
+
+# Drop fc's leading line numbers, collapse repeats (keeping the most recent
+# occurrence, which -r puts first), and take only as many as we need.
+local -aU lines=( ${${(f)raw}##[[:blank:]]#<->[[:blank:]]##} )
+lines=( ${lines:#} )
+
+(( $#lines > budget )) &&
+    lines=( $lines[1,budget] )
+
+(( $#lines )) ||
+    return 0
+
+local -i before=$#_omnibar_match
+
+# -Q so the line is inserted as-is rather than requoted, and -U so compadd
+# does not re-filter it against the current word; this source has already
+# decided what matches.
+compadd -Q -U -S '' -- "${(@)lines}"
+
+# Tag what was just added as history so the ranker can tell the sources apart;
+# the collector marks everything as completion by default.
+local -i i after=$#_omnibar_match
+for (( i = before + 1; i <= after; i++ )); do
+  _omnibar_src[i]=h
+done
+
+return 0
