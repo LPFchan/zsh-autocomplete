@@ -171,6 +171,18 @@ local -i use_icons=1
 zstyle -T ":autocomplete:omnibar:" icons ||
     use_icons=0
 
+# Left margin for every row. Folded into the same prefix as the glyph, so the
+# width budget below already accounts for it and the dim-splice offsets, which
+# are measured against the row body, stay correct.
+#
+# This indents the list only. The prompt line above it belongs to whatever
+# draws your prompt, not to this plugin.
+local -i _omni_margin=0
+zstyle -s ":autocomplete:omnibar:" left-margin _omni_margin ||
+    _omni_margin=2
+(( _omni_margin < 0 )) && _omni_margin=0
+local _omni_pad="${(l:_omni_margin:: :)}"
+
 local -A icon=()
 if (( use_icons )); then
   # Literal UTF-8, not $'\uXXXX': those are converted at run time and fail
@@ -290,9 +302,9 @@ for _oi in $order; do
     # Completion tags are plural (`commands`, `options`); drop the trailing s
     # so one table entry covers both spellings.
     _omni_tag=${${_omnibar_tag[_oi]:-default}%s}
-    _omni_glyph="${icon[$_omni_tag]:-$icon[default]} "
+    _omni_glyph="$_omni_pad${icon[$_omni_tag]:-$icon[default]} "
   else
-    _omni_glyph=
+    _omni_glyph="$_omni_pad"
   fi
 
   # Fit the plain text first. Truncating after the escapes are in would count
@@ -430,8 +442,9 @@ local -i gain=$(( shown - hist_max ))
 if (( gain > 0 )) && [[ -n $_OMNIBAR_MORE ]]; then
   local -a _omni_more_m=( "$PREFIX$SUFFIX$_OMNIBAR_MORE" )
   local _omni_more_glyph=
+  _omni_more_glyph="$_omni_pad"
   (( use_icons )) &&
-      _omni_more_glyph="${icon[default]} "
+      _omni_more_glyph="$_omni_pad${icon[default]} "
 
   # Only history is offered, because only history is actionable; see the note
   # on the total above. Mentioning the withheld completions would advertise

@@ -95,6 +95,27 @@ zstyle ':autocomplete:omnibar:' list-lines    16  # fixed total rows
 Autocomplete's own budget is `min(16, LINES - BUFFERLINES - 1)`, so setting
 `list-lines` here is what lets the list grow past 16 rows on a tall window.
 
+### Left margin
+Rows are indented two columns by default, which stops the list sitting hard
+against the edge of the terminal:
+```zsh
+zstyle ':autocomplete:omnibar:' left-margin 4   # or 0 for none
+```
+The margin is counted against each row's width, so indenting does not push long
+rows into wrapping.
+
+This indents the completion list only. The prompt above it is drawn by your
+prompt program, not by Autocomplete. With Starship, a matching indent is:
+```toml
+# ~/.config/starship.toml
+format = "  $all"
+
+[character]
+format = "  $symbol "
+```
+The second block is what indents the line you actually type on; `format` alone
+only shifts the lines above it.
+
 ### Icons
 Each row is prefixed with a Nerd Font glyph showing where it came from -- a
 clock for history, a terminal for commands, a folder for directories, and so
