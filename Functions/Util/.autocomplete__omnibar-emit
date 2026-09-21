@@ -38,7 +38,6 @@ else
 fi
 (( shown > 0 )) || shown=16
 
-local -a order=( $_omnibar_order )
 
 # Cap the history block. Ranking will happily return twenty near-identical
 # `git clone ...` lines, which crowds out the completions and reads as noise;
@@ -74,6 +73,41 @@ local -a order=( $_omnibar_order )
 #
 # `compadd -O` answers this exactly -- it reports which candidates match,
 # using zsh's own matcher, without adding any of them.
+# Drop whole-directory listings until something has been typed.
+#
+# With an empty word, a file or directory tag offers everything in the
+# directory -- fifty entries of `apple-event`, `artmu-bench`, ... which is not
+# a suggestion, it is an `ls`. It crowds out the completions and history that
+# were actually asked for. Once a letter narrows it, the same candidates are
+# useful, so they come back.
+#
+# Tags rather than a filesystem test, so `cd <tab>` and `ls <tab>` behave the
+# same way regardless of what the candidates happen to be. Adjust or empty the
+# list to get the stock behaviour back:
+#   zstyle ':autocomplete:omnibar:' hide-until-typed files directories
+local -a _omni_hide=()
+if ! zstyle -a ":autocomplete:omnibar:" hide-until-typed _omni_hide; then
+  _omni_hide=(
+      files globbed-files all-files
+      directories local-directories
+  )
+fi
+
+if (( $#_omni_hide )) && [[ -z $PREFIX$SUFFIX ]]; then
+  local -a _omni_narrow=()
+  local -i _oh=0
+  for _oh in $_omnibar_order; do
+    (( ${_omni_hide[(Ie)${_omnibar_tag[_oh]}]} )) &&
+        continue
+    _omni_narrow+=( $_oh )
+  done
+  # Only if something survives. A context whose only candidates are files --
+  # `cat <tab>`, say -- would otherwise show an empty list, which is worse
+  # than showing the directory.
+  (( $#_omni_narrow )) &&
+      _omnibar_order=( $_omni_narrow )
+fi
+
 local -a _omni_cand=() _omni_matched=()
 local -i _oc=0
 for _oc in $_omnibar_order; do
@@ -101,14 +135,14 @@ if (( $#_omni_cand )); then
     _omni_pruned+=( $_oc )
   done
   _omnibar_order=( $_omni_pruned )
-
-  # Refresh the working copy. It was taken from the pool before pruning, so
-  # without this the row-building pass still walks the rejected candidates:
-  # they get emitted, compadd drops them, and the list ends up shorter than the
-  # window with no indication why. Rows were being built for 37 candidates and
-  # 25 drawn.
-  order=( $_omnibar_order )
 fi
+
+# The working copy is taken here, after every filter that can shrink the pool:
+# the hide-until-typed pass above and the match-pruning pass before it. Copying
+# it earlier left the build pass walking candidates that had already been
+# rejected -- they were emitted, compadd dropped them, and the list came out
+# shorter than the window with nothing to show why.
+local -a order=( $_omnibar_order )
 
 local -i avail_h=0 avail_c=0
 for _oc in $_omnibar_order; do
@@ -202,20 +236,31 @@ if (( use_icons )); then
   # Everything here is prefixed `_omni_`. This code runs inside the completion
   # machinery, where bare names like `spec`, `k`, `v` and `tmp` are in common
   # use; declaring them here leaked `spec=( ... )` onto the prompt line.
+  # Keyed on the tags zsh actually emits, which are plural. An earlier
+  # version stored singular keys and stripped a trailing `s`, which works for
+  # `commands` and `options` and not for `directories` -- that becomes
+  # `directorie`, misses the table, and every folder got the fallback glyph.
+  # Listing the real spellings avoids guessing at English plurals.
   local -a _omni_spec=(
-      history          
-      command          
-      executable       
-      builtin          
-      alias            
-      function         
-      parameter        
-      option           
-      file             
-      globbed-file     
-      directory        
-      local-directory  
-      default          
+      history              
+      commands             
+      executables          
+      builtins             
+      reserved-words       
+      suffix-aliases       
+      aliases              
+      functions            
+      parameters           
+      options              
+      values               
+      files                
+      globbed-files        
+      all-files            
+      directories          
+      local-directories    
+      named-directories    
+      directory-stack      
+      default              
   )
   local _omni_k= _omni_v= _omni_tmp=
   while (( $#_omni_spec )); do
@@ -328,7 +373,7 @@ for _oi in $order; do
   if (( use_icons )); then
     # Completion tags are plural (`commands`, `options`); drop the trailing s
     # so one table entry covers both spellings.
-    _omni_tag=${${_omnibar_tag[_oi]:-default}%s}
+    _omni_tag=${_omnibar_tag[_oi]:-default}
     _omni_glyph="$_omni_pad${icon[$_omni_tag]:-$icon[default]}$_omni_gapstr"
   else
     _omni_glyph="$_omni_pad"

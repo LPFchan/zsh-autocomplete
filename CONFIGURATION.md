@@ -234,9 +234,25 @@ Individual glyphs are overridable by tag:
 zstyle ':autocomplete:omnibar:icons' history '\uf017'
 zstyle ':autocomplete:omnibar:icons' directory '\uf115'
 ```
-Recognised tags: `history`, `command`, `executable`, `builtin`, `alias`,
-`function`, `parameter`, `option`, `file`, `globbed-file`, `directory`,
-`local-directory`, and `default` for anything else.
+Recognised tags are the ones zsh itself uses, which are plural: `history`,
+`commands`, `executables`, `builtins`, `reserved-words`, `suffix-aliases`,
+`aliases`, `functions`, `parameters`, `options`, `values`, `files`,
+`globbed-files`, `all-files`, `directories`, `local-directories`,
+`named-directories`, `directory-stack`, and `default` for anything else.
+
+### Directory listings wait for a letter
+With nothing typed, a file or directory tag offers the whole directory -- fifty
+entries that are an `ls` rather than a suggestion, crowding out the completions
+and history that were asked for. Those tags are held back until the word is
+non-empty:
+```zsh
+zstyle ':autocomplete:omnibar:' hide-until-typed files directories  # adjust
+zstyle -d ':autocomplete:omnibar:' hide-until-typed                 # stock behaviour
+```
+Defaults to `files globbed-files all-files directories local-directories`. If
+hiding them would leave the list empty -- `cat <tab>`, where files are all
+there is -- they are shown anyway, since an empty list is worse than a
+directory listing.
 
 ### Layout
 History appears as a block above the completions, rather than interleaved
