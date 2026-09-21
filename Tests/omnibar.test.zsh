@@ -92,6 +92,46 @@ unfunction builtin
 (( passed == 1 && $#_omnibar_match == 0 )) ||
     fail "-O must pass through uncollected: passed=$passed collected=$#_omnibar_match"
 
+# --- history source: what is shown vs what is inserted --------------------
+
+# A match replaces the current *word*, not the line. History candidates are
+# whole command lines, so inserting one verbatim leaves the already-typed words
+# in front of it: with `git c` on the line, picking `git clone ...` produced
+# `git git clone ...`. The row must show the whole command while inserting only
+# the part that replaces the word.
+functions[.autocomplete__omnibar-history]="$( < Functions/Util/.autocomplete__omnibar-history )"
+
+reset-pool
+typeset -ga words=( git c )
+typeset -gi CURRENT=2
+typeset -g PREFIX='c' SUFFIX=''
+typeset -g BUFFER='git c'
+
+# Stand in for the real history lookup.
+fc() {
+  print -r -- '  1  git clone https://example.com/one ~/one'
+  print -r -- '  2  git commit -m "two"'
+}
+# The collector is what the source calls; route it through the real one.
+compadd() { .autocomplete__omnibar-collect "$@" }
+
+.autocomplete__omnibar-history
+
+unfunction fc compadd
+
+# Displayed: the whole command line.
+[[ $_omnibar_disp[1] == 'git clone https://example.com/one ~/one' ]] ||
+    fail "history row should display the full command: got '$_omnibar_disp[1]'"
+
+# Inserted: only what replaces `c`, i.e. the line minus the leading `git `.
+[[ $_omnibar_match[1] == 'clone https://example.com/one ~/one' ]] ||
+    fail "history match must drop the already-typed prefix, or insertion duplicates it: got '$_omnibar_match[1]'"
+
+# And it must be tagged as history, or the ranker scores it against the wrong
+# text and it never places.
+[[ $_omnibar_src[1] == h ]] ||
+    fail "history candidates should be tagged h: got '$_omnibar_src[1]'"
+
 # --- ranker: cross-source ordering ----------------------------------------
 
 typeset -g PREFIX='c' SUFFIX=''

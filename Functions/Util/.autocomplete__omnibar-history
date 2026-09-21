@@ -67,7 +67,24 @@ local -i before=$#_omnibar_match
 # -Q so the line is inserted as-is rather than requoted, and -U so compadd
 # does not re-filter it against the current word; this source has already
 # decided what matches.
-compadd -Q -U -S '' -- "${(@)lines}"
+# A match replaces the *current word*, not the whole line. These candidates are
+# whole command lines, so inserting one verbatim leaves the words already typed
+# in front of it: with `git c` on the line, picking `git clone ...` produced
+# `git git clone ...`.
+#
+# So the row shows the full command while the inserted text is only the part
+# that replaces the word under the cursor. Anchored matching guarantees each
+# line starts with what was typed, so stripping that prefix is safe. Upstream's
+# history source does the same thing for the same reason.
+local _omni_h_ctx=
+if (( CURRENT > 1 )); then
+  _omni_h_ctx="${(j: :)words[1,CURRENT-1]} "
+fi
+
+# Quoted, so a prefix containing glob characters is matched literally.
+local -a inserts=( ${(@)lines#"$_omni_h_ctx"} )
+
+compadd -Q -U -S '' -d lines -- "${(@)inserts}"
 
 # Tag what was just added as history so the ranker can tell the sources apart;
 # the collector marks everything as completion by default.
