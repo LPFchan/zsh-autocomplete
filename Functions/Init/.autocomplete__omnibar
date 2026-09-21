@@ -9,7 +9,7 @@
 # The module system in `.autocomplete__main` gates every module on that style,
 # so no extra plumbing is needed for the escape hatch.
 
-# One completer replaces Autocomplete's chain. `_omnibar` drives `_complete`
+# One completer replaces Autocomplete's chain. `_omnibar` drives the chain
 # itself so it can intercept everything on the way out, and `_ignored` stays
 # behind it as the usual fallback.
 builtin zstyle ':completion:*' completer _omnibar _ignored
@@ -17,9 +17,45 @@ builtin zstyle ':completion:*' completer _omnibar _ignored
 # The omnibar is one ranked list, so the history/completion toggle has nothing
 # left to switch between. Neutralise it rather than leaving a key that puts the
 # list into a mode the ranking does not apply to.
-#
-# `default-context` and the fork's old `persist-context` style are both
-# meaningless now and are simply ignored.
 .autocomplete:async:toggle-context() {
   return 0
+}
+
+##
+# Everything below has to happen at the first prompt rather than here.
+#
+# `.autocomplete__main` runs the modules while the plugin is being sourced,
+# which is *before* the rest of the user's .zshrc. Anything this module decides
+# now can be overridden a few lines later by their own `zstyle` calls. The
+# module system gives every module an optional `:precmd` that runs at the first
+# prompt instead, which is after .zshrc has finished.
+#
+${0}:precmd() {
+  emulate -L zsh
+  setopt $_autocomplete__func_opts[@]
+
+  # `default-context` must go, and it is not merely cosmetic.
+  #
+  # `.autocomplete:async:reset-context` applies it to `curcontext` at the start
+  # of every command line, and `.autocomplete:async:list-choices:main-complete`
+  # then switches on `curcontext`:
+  #
+  #     case $curcontext in
+  #     *history-* ) ... - history-lines _autocomplete__history_lines ;;
+  #
+  # That branch calls `_main_complete` with an explicit completer, which
+  # bypasses the `completer` style set above entirely -- so with
+  # `default-context history-incremental-search-backward` in .zshrc, `_omnibar`
+  # never runs at all and the list silently falls back to history-only.
+  local -a pattern=()
+  local line=
+  for line in ${(f)"$( builtin zstyle -L '*' default-context 2> /dev/null )"}; do
+    pattern=( ${(z)line} )
+    (( $#pattern >= 2 )) &&
+        builtin zstyle -d "${(Q)pattern[2]}" default-context 2> /dev/null
+  done
+
+  # Re-assert the completer for the same reason: a .zshrc that sets its own
+  # `completer` style would otherwise take precedence over this module.
+  builtin zstyle ':completion:*' completer _omnibar _ignored
 }
