@@ -108,11 +108,47 @@ fi
 #     two long commands differing only past the truncation point produce rows
 #     that are character-for-character identical on screen, which reads as a
 #     bug rather than as two different commands.
+# The command line up to (but not including) the word being completed. A
+# browser's address bar shows every suggestion as a full continuation of what
+# was typed -- `git c` becomes `git clone`, `git commit`, `git config` -- so
+# the rows are all the same shape and visibly related to the input. A bare
+# `checkout` does not read as a continuation of `git c`, which is most of why
+# the list looked like unrelated fragments next to the full history lines.
+#
+# Display only. The inserted value stays the single word compadd was given.
+local _omni_ctx=
+if (( CURRENT > 1 )); then
+  _omni_ctx="${(j: :)words[1,CURRENT-1]} "
+fi
+
+# What has actually been typed. Every row begins with this -- completions
+# because the context is prepended above, history because its matching is
+# anchored to the same text -- so it can be de-emphasised at a fixed offset.
+local _omni_typed="$_omni_ctx$PREFIX$SUFFIX"
+local -i _omni_tlen=$#_omni_typed
+
+# Dim the typed part of each row and leave the rest at normal intensity, which
+# is the terminal's version of what a browser's address bar does with font
+# weight: you see at a glance which characters are yours and which are the
+# suggestion. Escapes are spliced in *after* truncation, because zsh counts
+# them toward the display width when it pads the row.
+local _omni_dim= _omni_off=
+local -i _omni_esclen=0
+if zstyle -T ":autocomplete:omnibar:" dim-typed; then
+  zstyle -s ":autocomplete:omnibar:" dim-sequence _omni_dim ||
+      _omni_dim=$'\e[2m'
+  # \e[22m (normal intensity) rather than \e[0m (reset everything): a full
+  # reset would also clear the inverse video zsh puts on the selected row, so
+  # the highlight would stop halfway across it.
+  _omni_off=$'\e[22m'
+  (( _omni_esclen = ${#_omni_dim} + ${#_omni_off} ))
+fi
+
 typeset -ga _omnibar_row=()
 local -a kept=()
 local -A row_seen=()
 local -i seen_h=0 _oi=0
-local _omni_glyph= _omni_tag= _omni_line=
+local _omni_glyph= _omni_tag= _omni_line= _omni_body=
 
 for _oi in $order; do
   if [[ $_omnibar_src[_oi] == h ]]; then
@@ -120,30 +156,51 @@ for _oi in $order; do
         continue
   fi
 
+  # History entries are already whole command lines; completions are a single
+  # word and get the context prepended so they read as continuations too.
+  if [[ $_omnibar_src[_oi] == h ]]; then
+    _omni_body="$_omnibar_disp[_oi]"
+  else
+    _omni_body="$_omni_ctx$_omnibar_disp[_oi]"
+  fi
+
   if (( use_icons )); then
     # Completion tags are plural (`commands`, `options`); drop the trailing s
     # so one table entry covers both spellings.
     _omni_tag=${${_omnibar_tag[_oi]:-default}%s}
-    _omni_glyph=${icon[$_omni_tag]:-$icon[default]}
-    _omni_line="$_omni_glyph ${_omnibar_disp[_oi]}"
+    _omni_glyph="${icon[$_omni_tag]:-$icon[default]} "
   else
-    _omni_line="$_omnibar_disp[_oi]"
+    _omni_glyph=
   fi
 
-  # Truncate once the row is complete, glyph included. Doing it in the source
-  # leaves the glyph and its space unaccounted for, so a full-width history
-  # line spills onto a second row and the redraw falls apart. The `m` flag
-  # counts display width rather than bytes, so wide glyphs measure correctly.
-  # The ellipsis marks a clipped row as clipped, instead of looking like a
+  # Fit the plain text first. Truncating after the escapes are in would count
+  # them as visible characters and cut the row short. The `m` flag measures
+  # display width rather than bytes, so the glyph is counted correctly. The
+  # ellipsis marks a clipped row as clipped, rather than looking like a
   # command that genuinely ends mid-word.
-  if (( ${#_omni_line} > COLUMNS - 1 )); then
-    _omni_line="${(mr:COLUMNS-2:)_omni_line}…"
+  # Subtract the escape sequences from the budget as well. zsh measures the
+  # raw string when it works out how many screen lines a row needs, escapes
+  # included, so a row that fits on paper is counted as two lines and the
+  # listing turns into "do you wish to see all 16 possibilities (32 lines)?".
+  local -i _omni_budget=$(( COLUMNS - 1 - ${#_omni_glyph} - _omni_esclen ))
+  (( _omni_budget < 8 )) && _omni_budget=8
+  if (( ${#_omni_body} > _omni_budget )); then
+    _omni_body="${(mr:_omni_budget-1:)_omni_body}…"
   fi
-  _omni_line="${(mr:COLUMNS-1:)_omni_line}"
+  _omni_body="${(mr:_omni_budget:)_omni_body}"
 
-  [[ -n ${row_seen[$_omni_line]-} ]] &&
+  # De-duplicate on the plain text: two long commands differing only past the
+  # cut render as identical rows, which reads as a bug.
+  [[ -n ${row_seen[$_omni_glyph$_omni_body]-} ]] &&
       continue
-  row_seen[$_omni_line]=1
+  row_seen[$_omni_glyph$_omni_body]=1
+
+  if [[ -n $_omni_dim ]] && (( _omni_tlen > 0 )) &&
+      [[ $_omni_body[1,_omni_tlen] == $_omni_typed ]]; then
+    _omni_line="$_omni_glyph$_omni_dim$_omni_body[1,_omni_tlen]$_omni_off$_omni_body[_omni_tlen+1,-1]"
+  else
+    _omni_line="$_omni_glyph$_omni_body"
+  fi
 
   [[ $_omnibar_src[_oi] == h ]] &&
       (( seen_h++ ))

@@ -43,6 +43,24 @@ To go back to stock behaviour:
 zstyle ':autocomplete:omnibar' enabled no
 ```
 
+### Rows read as continuations of what you typed
+Every row is the whole command it would produce, not just the word being
+completed: typing `git c` lists `git clone`, `git commit`, `git config` rather
+than `clone`, `commit`, `config`. That is what a browser's address bar does,
+and it matters for more than tidiness -- a bare `clone` does not read as a
+continuation of `git c`, so the rows look unrelated to each other and to the
+input. Only the display changes; what gets inserted is still the single word.
+
+The typed part of each row is dimmed and the rest left at normal intensity,
+which is the terminal's equivalent of the address bar's bold-vs-regular split:
+you can see at a glance which characters are yours and which are the
+suggestion.
+
+```zsh
+zstyle ':autocomplete:omnibar:' dim-typed no          # turn it off
+zstyle ':autocomplete:omnibar:' dim-sequence $'\e[90m'  # grey instead of faint
+```
+
 ### Icons
 Each row is prefixed with a Nerd Font glyph showing where it came from -- a
 clock for history, a terminal for commands, a folder for directories, and so
