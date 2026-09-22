@@ -14,7 +14,7 @@ unsetopt listbeep
   typeset -ga _autocomplete__funcfiletrace=( $funcfiletrace )
 
   local basedir=${${(%):-%x}:P:h}
-  hash -d autocomplete=$basedir zsh-autocomplete=$basedir
+  hash -d autocomplete=$basedir zsh-autocomplete=$basedir zsh-omnibar=$basedir
 
   typeset -gU FPATH fpath=( ~autocomplete/Completions $fpath[@] )
   builtin autoload +X -Uz ~autocomplete/Functions/**/?autocomplete__*~*.zwc(D-:)

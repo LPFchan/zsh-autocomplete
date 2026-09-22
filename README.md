@@ -1,3 +1,19 @@
+> ### This is zsh-omnibar
+>
+> A fork of [zsh-autocomplete](https://github.com/marlonrichert/zsh-autocomplete)
+> that replaces its two modes -- completions, and history search on
+> <kbd>Ctrl</kbd><kbd>R</kbd> -- with a single ranked list blending both, the
+> way a browser's address bar does. Every row is the whole command it would
+> produce, the typed part dimmed and the rest not, with an icon showing where
+> it came from.
+>
+> See [CONFIGURATION.md](CONFIGURATION.md#omnibar-one-ranked-list-instead-of-two-modes)
+> for what changed and how to turn it off. Everything below is upstream's own
+> README and still describes the plugin underneath.
+>
+> Load it as `zsh-omnibar.plugin.zsh`. Internal names are deliberately
+> unchanged so upstream merges stay cheap.
+
 # Autocomplete for Zsh
 This plugin for Zsh adds real-time type-ahead autocompletion to your command line, similar to what
 you find in desktop apps. While you type on the command line, available completions are listed
